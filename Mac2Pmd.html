@@ -1,1117 +1,925 @@
-<!DOCTYPE html>  
-<html lang="zh-CN">  
-<head>  
-    <meta charset="UTF-8">  
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
-    <title>MAC Client → PMD 报文发送全路径动画演示</title>  
-    <link rel="stylesheet" href="common.css">  
-    <style>  
-        /* ========== Page-Specific Styles ========== */  
-
-        /* --- Pipeline Container --- */  
-        .pipeline {  
-            position: relative;  
-        }  
-
-        .pipeline-module {  
-            background: var(--bg-card);  
-            border: 2px solid var(--border-color);  
-            border-radius: var(--border-radius);  
-            margin-bottom: 8px;  
-            overflow: hidden;  
-            transition: all 0.4s ease;  
-            cursor: pointer;  
-        }  
-
-        .pipeline-module.active {  
-            border-color: var(--accent-cyan);  
-            box-shadow: var(--shadow-glow-cyan);  
-        }  
-
-        .pipeline-module.done {  
-            border-color: rgba(105, 240, 174, 0.4);  
-        }  
-
-        .pipeline-module.uec {  
-            border-left: 4px solid var(--accent-purple);  
-        }  
-
-        .pipeline-module .pm-header {  
-            display: flex;  
-            align-items: center;  
-            justify-content: space-between;  
-            padding: 12px 18px;  
-            cursor: pointer;  
-            user-select: none;  
-        }  
-
-        .pipeline-module .pm-header .pm-icon {  
-            font-size: 1.2em;  
-            margin-right: 10px;  
-        }  
-
-        .pipeline-module .pm-header .pm-title {  
-            font-weight: 600;  
-            font-size: 0.95em;  
-            flex: 1;  
-        }  
-
-        .pipeline-module .pm-header .pm-layer {  
-            font-size: 0.7em;  
-            padding: 2px 8px;  
-            border-radius: 10px;  
-            background: rgba(100, 255, 218, 0.1);  
-            color: var(--accent-cyan);  
-            margin-left: 8px;  
-            white-space: nowrap;  
-        }  
-
-        .pipeline-module .pm-header .pm-layer.uec-tag {  
-            background: rgba(187, 134, 252, 0.15);  
-            color: var(--accent-purple);  
-        }  
-
-        .pipeline-module .pm-header .pm-status {  
-            font-size: 0.8em;  
-            margin-left: 10px;  
-            min-width: 20px;  
-            text-align: center;  
-        }  
-
-        .pipeline-module .pm-body {  
-            max-height: 0;  
-            overflow: hidden;  
-            transition: max-height 0.4s ease, padding 0.3s ease;  
-            padding: 0 18px;  
-        }  
-
-        .pipeline-module .pm-body.open {  
-            max-height: 2000px;  
-            padding: 0 18px 16px;  
-        }  
-
-        .pipeline-module .pm-desc {  
-            font-size: 0.85em;  
-            color: var(--text-secondary);  
-            line-height: 1.6;  
-            margin-bottom: 10px;  
-        }  
-
-        .pipeline-module .pm-ref {  
-            font-size: 0.75em;  
-            color: var(--text-muted);  
-            font-style: italic;  
-        }  
-
-        .pipeline-module .pm-data-view {  
-            margin-top: 10px;  
-        }  
-
-        .pipeline-module .pm-data-label {  
-            font-size: 0.75em;  
-            color: var(--text-muted);  
-            margin-bottom: 4px;  
-        }  
-
-        .pipeline-module .pm-data-box {  
-            background: rgba(0, 0, 0, 0.3);  
-            border: 1px solid var(--border-color);  
-            border-radius: var(--border-radius-sm);  
-            padding: 10px 12px;  
-            font-family: var(--font-mono);  
-            font-size: 0.78em;  
-            min-height: 36px;  
-            word-break: break-all;  
-            overflow-x: auto;  
-            transition: all 0.3s ease;  
-        }  
-
-        .pipeline-module.active .pm-data-box {  
-            border-color: var(--accent-cyan);  
-            box-shadow: inset 0 0 15px rgba(100, 255, 218, 0.05);  
-        }  
-
-        /* --- Packet Dot Animation --- */  
-        .packet-dot {  
-            position: absolute;  
-            left: 50%;  
-            width: 14px;  
-            height: 14px;  
-            border-radius: 50%;  
-            background: var(--accent-cyan);  
-            box-shadow: 0 0 12px rgba(100, 255, 218, 0.6);  
-            transform: translateX(-50%);  
-            z-index: 10;  
-            transition: top 0.6s cubic-bezier(0.4, 0, 0.2, 1);  
-            pointer-events: none;  
-        }  
-
-        .packet-dot.hidden {  
-            opacity: 0;  
-        }  
-
-        /* --- Flow Arrow between modules --- */  
-        .pipe-arrow {  
-            text-align: center;  
-            font-size: 1.1em;  
-            color: var(--accent-cyan);  
-            opacity: 0.35;  
-            padding: 2px 0;  
-            transition: opacity 0.3s ease;  
-        }  
-        .pipe-arrow.active {  
-            opacity: 1;  
-            animation: pulse-cyan 1.5s infinite;  
-        }  
-
-        /* --- Mini Architecture Diagram --- */  
-        .arch-bar {  
-            display: flex;  
-            align-items: center;  
-            gap: 4px;  
-            padding: 12px 8px;  
-            overflow-x: auto;  
-            background: rgba(0, 0, 0, 0.2);  
-            border-radius: var(--border-radius-sm);  
-            margin-bottom: var(--spacing-lg);  
-        }  
-
-        .arch-bar .ab-block {  
-            padding: 6px 10px;  
-            border-radius: 6px;  
-            font-size: 0.7em;  
-            font-weight: 600;  
-            white-space: nowrap;  
-            border: 2px solid var(--border-color);  
-            background: var(--bg-card);  
-            transition: all 0.3s ease;  
-            cursor: pointer;  
-            text-align: center;  
-            min-width: 65px;  
-        }  
-
-        .arch-bar .ab-block.active {  
-            border-color: var(--accent-cyan);  
-            background: rgba(100, 255, 218, 0.12);  
-            box-shadow: 0 0 10px rgba(100, 255, 218, 0.3);  
-            color: var(--accent-cyan);  
-        }  
-
-        .arch-bar .ab-block.done {  
-            border-color: rgba(105, 240, 174, 0.3);  
-            color: var(--accent-green);  
-        }  
-
-        .arch-bar .ab-block.uec-bar {  
-            border-color: rgba(187, 134, 252, 0.3);  
-        }  
-
-        .arch-bar .ab-arrow {  
-            color: var(--text-muted);  
-            font-size: 0.8em;  
-            flex-shrink: 0;  
-        }  
-
-        /* --- Data Format Display --- */  
-        .fmt-bytes {  
-            display: inline-flex;  
-            flex-wrap: wrap;  
-            gap: 2px;  
-        }  
-
-        .fmt-bytes .fb {  
-            display: inline-block;  
-            padding: 2px 4px;  
-            border-radius: 2px;  
-            font-family: var(--font-mono);  
-            font-size: 0.72em;  
-            min-width: 22px;  
-            text-align: center;  
-        }  
-
-        .fmt-label {  
-            display: inline-block;  
-            padding: 2px 6px;  
-            border-radius: 3px;  
-            font-size: 0.7em;  
-            font-weight: 600;  
-            margin-right: 4px;  
-        }  
-
-        /* Specific field colors */  
-        .f-da     { background: #1565C0; color: #fff; }  
-        .f-sa     { background: #0277BD; color: #fff; }  
-        .f-type   { background: #00838F; color: #fff; }  
-        .f-payload{ background: #2196f3; color: #fff; }  
-        .f-fcs    { background: #f44336; color: #fff; }  
-        .f-pre    { background: #9c27b0; color: #fff; }  
-        .f-sfd    { background: #e91e63; color: #fff; }  
-        .f-ipg    { background: #607d8b; color: #fff; }  
-        .f-seq    { background: #4caf50; color: #fff; }  
-        .f-sync   { background: #ff9800; color: #000; }  
-        .f-bt     { background: #ff9800; color: #000; }  
-        .f-scr    { background: #6A1B9A; color: #fff; }  
-        .f-am     { background: #00BCD4; color: #000; }  
-        .f-fec-d  { background: #3F51B5; color: #fff; }  
-        .f-fec-p  { background: #E65100; color: #fff; }  
-        .f-pam4   { background: #263238; color: #69f0ae; border: 1px solid #69f0ae; }  
-        .f-light  { background: linear-gradient(135deg, #FFD54F, #FF7043); color: #000; }  
-
-        /* --- Info Chips --- */  
-        .info-chips {  
-            display: flex;  
-            flex-wrap: wrap;  
-            gap: 6px;  
-            margin-top: 8px;  
-        }  
-
-        .info-chip {  
-            font-size: 0.7em;  
-            padding: 3px 8px;  
-            border-radius: 10px;  
-            background: rgba(100, 255, 218, 0.08);  
-            border: 1px solid rgba(100, 255, 218, 0.15);  
-            color: var(--text-secondary);  
-        }  
-
-        .info-chip b {  
-            color: var(--accent-cyan);  
-        }  
-
-        /* --- Speed control row --- */  
-        .ctrl-row {  
-            display: flex;  
-            align-items: center;  
-            gap: 12px;  
-            flex-wrap: wrap;  
-        }  
-
-        /* --- Detail Table in module body --- */  
-        .detail-grid {  
-            display: grid;  
-            grid-template-columns: auto 1fr;  
-            gap: 4px 12px;  
-            font-size: 0.82em;  
-            margin: 8px 0;  
-        }  
-
-        .detail-grid .dg-key {  
-            color: var(--text-muted);  
-            white-space: nowrap;  
-        }  
-
-        .detail-grid .dg-val {  
-            color: var(--text-primary);  
-            font-family: var(--font-mono);  
-            font-size: 0.92em;  
-        }  
-
-        /* --- Lane Distribution Visual --- */  
-        .lane-vis {  
-            display: grid;  
-            grid-template-columns: repeat(8, 1fr);  
-            gap: 4px;  
-            margin: 8px 0;  
-        }  
-
-        .lane-vis .lane-box {  
-            background: rgba(0, 0, 0, 0.3);  
-            border: 1px solid var(--border-color);  
-            border-radius: 4px;  
-            padding: 4px;  
-            text-align: center;  
-            font-size: 0.65em;  
-            font-family: var(--font-mono);  
-            transition: all 0.3s ease;  
-        }  
-
-        .lane-vis .lane-box.active {  
-            border-color: var(--accent-cyan);  
-            background: rgba(100, 255, 218, 0.1);  
-        }  
-
-        .lane-vis .lane-box .lane-id {  
-            font-weight: 700;  
-            color: var(--accent-cyan);  
-        }  
-
-        /* --- PAM4 Eye Diagram (simple CSS) --- */  
-        .pam4-eye {  
-            display: flex;  
-            align-items: flex-end;  
-            gap: 2px;  
-            height: 60px;  
-            padding: 4px;  
-            background: rgba(0, 0, 0, 0.4);  
-            border-radius: 4px;  
-            margin: 8px 0;  
-        }  
-
-        .pam4-eye .eye-bar {  
-            flex: 1;  
-            border-radius: 2px 2px 0 0;  
-            transition: height 0.3s ease;  
-            min-width: 3px;  
-        }  
-
-        /* --- Summary Card --- */  
-        .summary-card {  
-            background: rgba(0, 0, 0, 0.25);  
-            border: 1px solid var(--border-color);  
-            border-radius: var(--border-radius);  
-            padding: 20px;  
-            margin-top: var(--spacing-lg);  
-        }  
-
-        .summary-card h3 {  
-            color: var(--accent-cyan);  
-            margin-bottom: 12px;  
-            font-size: 1em;  
-        }  
-
-        /* --- Transition line between steps --- */  
-        .step-connector {  
-            width: 2px;  
-            height: 100%;  
-            background: var(--border-color);  
-            position: absolute;  
-            left: 50%;  
-            top: 0;  
-            z-index: 0;  
-        }  
-
-        /* Log area */  
-        .log-area {  
-            background: rgba(0, 0, 0, 0.35);  
-            border: 1px solid var(--border-color);  
-            border-radius: var(--border-radius-sm);  
-            padding: 12px;  
-            max-height: 200px;  
-            overflow-y: auto;  
-            font-family: var(--font-mono);  
-            font-size: 0.75em;  
-            line-height: 1.8;  
-        }  
-
-        .log-area .log-entry {  
-            animation: fadeIn 0.3s ease;  
-        }  
-
-        .log-area .log-entry .log-time {  
-            color: var(--text-muted);  
-            margin-right: 8px;  
-        }  
-
-        .log-area .log-entry .log-module {  
-            color: var(--accent-cyan);  
-            font-weight: 600;  
-            margin-right: 6px;  
-        }  
-
-        /* blinking cursor for active data */  
-        @keyframes blink-cursor {  
-            0%, 100% { border-right-color: var(--accent-cyan); }  
-            50% { border-right-color: transparent; }  
-        }  
-
-        .typing-cursor {  
-            border-right: 2px solid var(--accent-cyan);  
-            animation: blink-cursor 1s step-end infinite;  
-            padding-right: 2px;  
-        }  
-    </style>  
-</head>  
-<body>  
-
-<!-- ========== Page Header ========== -->  
-<div class="page-header">  
-    <h1>🔬 MAC Client → PMD 报文发送全路径动画</h1>  
-    <div class="subtitle">  
-        800GbE 芯片内部 TX 路径 · 11 个处理模块逐级演示 · 基于 IEEE 802.3df &amp; UEC Specification v1.0  
-    </div>  
-</div>  
-
-<!-- ========== Main Container ========== -->  
-<div class="container">  
-
-    <!-- === Controls === -->  
-    <div class="section">  
-        <div class="section-title">⚙️ 动画控制</div>  
-
-        <div class="ctrl-row">  
-            <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0;">  
-                <label class="form-label">帧长度</label>  
-                <select id="selFrameLen">  
-                    <option value="64">64 字节（最小帧）</option>  
-                    <option value="128">128 字节</option>  
-                    <option value="256" selected>256 字节</option>  
-                    <option value="512">512 字节</option>  
-                    <option value="1518">1518 字节（最大标准帧）</option>  
-                </select>  
-            </div>  
-            <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0;">  
-                <label class="form-label">LLR 模式</label>  
-                <select id="selLLR">  
-                    <option value="eligible" selected>LLR-Eligible（可重传）</option>  
-                    <option value="ineligible">LLR-Ineligible（不可重传）</option>  
-                    <option value="disabled">LLR 未启用</option>  
-                </select>  
-            </div>  
-            <div class="form-group" style="flex:0;min-width:120px;margin-bottom:0;">  
-                <label class="form-label">动画速度</label>  
-                <select id="selSpeed">  
-                    <option value="0.5">0.5×</option>  
-                    <option value="1" selected>1×</option>  
-                    <option value="2">2×</option>  
-                    <option value="4">4× 快速</option>  
-                </select>  
-            </div>  
-        </div>  
-
-        <div class="btn-group mt-2">  
-            <button class="btn btn-primary" id="btnPlay">▶ 自动播放</button>  
-            <button class="btn btn-success" id="btnStep">⏭ 单步</button>  
-            <button class="btn btn-warning" id="btnReset">⟲ 重置</button>  
-        </div>  
-
-        <div class="info-box mt-2" id="statusMsg">  
-            点击「自动播放」或「单步」开始观察报文从 MAC Client 到 PMD 出口的完整处理过程。<br>  
-            每一步会高亮当前模块，展示数据格式变化。按 <code>Space</code> 播放/暂停，<code>→</code> 单步，<code>R</code> 重置。  
-        </div>  
-    </div>  
-
-    <!-- === Mini Architecture Bar === -->  
-    <div class="arch-bar" id="archBar">  
-        <!-- JS will populate -->  
-    </div>  
-
-    <!-- === Pipeline Modules === -->  
-    <div class="pipeline" id="pipeline">  
-        <!-- JS will build all modules -->  
-    </div>  
-
-    <!-- === Stats === -->  
-    <div class="section">  
-        <div class="section-title">📊 传输统计</div>  
-        <div class="stat-grid">  
-            <div class="stat-item">  
-                <div class="stat-label">当前模块</div>  
-                <div class="stat-value" id="statModule">—</div>  
-            </div>  
-            <div class="stat-item">  
-                <div class="stat-label">数据宽度</div>  
-                <div class="stat-value" id="statWidth">—</div>  
-            </div>  
-            <div class="stat-item">  
-                <div class="stat-label">编码效率</div>  
-                <div class="stat-value" id="statEfficiency">—</div>  
-            </div>  
-            <div class="stat-item">  
-                <div class="stat-label">累计延迟</div>  
-                <div class="stat-value" id="statLatency">0 ns</div>  
-            </div>  
-            <div class="stat-item">  
-                <div class="stat-label">处理步骤</div>  
-                <div class="stat-value" id="statStep">0 / 11</div>  
-            </div>  
-            <div class="stat-item">  
-                <div class="stat-label">线路速率</div>  
-                <div class="stat-value" id="statLineRate">800G</div>  
-            </div>  
-        </div>  
-    </div>  
-
-    <!-- === Log === -->  
-    <div class="section">  
-        <div class="section-title">📋 处理日志</div>  
-        <div class="log-area" id="logArea">  
-            <div class="log-entry"><span class="log-time">[00:00.000]</span><span class="log-module">SYSTEM</span> 等待启动...</div>  
-        </div>  
-    </div>  
-
-    <!-- === Summary === -->  
-    <div class="summary-card" id="summaryCard" style="display:none;">  
-        <h3>✅ TX 路径处理完成</h3>  
-        <div id="summaryContent"></div>  
-    </div>  
-
-    <!-- === Reference Table === -->  
-    <div class="section">  
-        <div class="section-title">📚 800GbE TX 路径延迟参考</div>  
-        <div class="table-wrapper">  
-            <table>  
-                <thead>  
-                    <tr><th>模块</th><th>典型延迟</th><th>数据格式</th><th>标准引用</th></tr>  
-                </thead>  
-                <tbody>  
-                    <tr><td>MAC Client</td><td>20-40 ns</td><td>以太网帧 (DA+SA+Type+Data+FCS)</td><td>IEEE 802.3 Clause 1-4</td></tr>  
-                    <tr><td>CBFC (UEC)</td><td>~5 ns</td><td>信用检查，帧透传</td><td>UEC Spec 6.11.26</td></tr>  
-                    <tr><td>LLR (UEC)</td><td>~10 ns</td><td>添加序列号到前导码</td><td>UEC Spec 6.11.25</td></tr>  
-                    <tr><td>MAC Control</td><td>~5 ns</td><td>PAUSE/PFC 帧插入</td><td>IEEE 802.3 Clause 31</td></tr>  
-                    <tr><td>RS (Reconciliation)</td><td>~5 ns</td><td>CGMII (TXD+TXC)</td><td>IEEE 802.3 Clause 169.3</td></tr>  
-                    <tr><td>PCS (64B/66B + Scrambler + AM)</td><td>10-20 ns</td><td>66-bit 块流</td><td>IEEE 802.3 Clause 82/170</td></tr>  
-                    <tr><td>FEC Encoder</td><td>50-100 ns</td><td>RS(544,514) 码字</td><td>IEEE 802.3 Clause 91/171</td></tr>  
-                    <tr><td>PMA Gearbox</td><td>10-20 ns</td><td>SerDes 位宽适配</td><td>IEEE 802.3 Clause 169.6</td></tr>  
-                    <tr><td>SerDes TX</td><td>50-100 ns</td><td>PAM4 串行比特流</td><td>OIF CEI-112G</td></tr>  
-                    <tr><td>PMD (E/O)</td><td>5-15 ns</td><td>光信号</td><td>IEEE 802.3 Clause 169.7</td></tr>  
-                    <tr style="font-weight:700;color:var(--accent-cyan)"><td>总计 (TX)</td><td>170-330 ns</td><td>—</td><td>—</td></tr>  
-                </tbody>  
-            </table>  
-        </div>  
-    </div>  
-
-</div>  
-
-<!-- ========== Footer ========== -->  
-<div class="page-footer">  
-    Mac2Pmd.html · 800GbE MAC→PMD TX 全路径动画演示<br>  
-    基于 IEEE 802.3df-2024 &amp; Ultra Ethernet Specification v1.0  
-</div>  
-
-<!-- ========== Scripts ========== -->  
-<script src="common.js"></script>  
-<script>  
-(function() {  
-    'use strict';  
-
-    // ============================================================  
-    //  Module Definitions — 11 TX processing stages  
-    // ============================================================  
-
-    const MODULES = [  
-        {  
-            id: 'mac_client',  
-            icon: '📦',  
-            title: 'MAC Client — 以太网帧生成',  
-            layer: 'L2',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 1-4',  
-            latencyMin: 20, latencyMax: 40,  
-            desc: '生成标准以太网帧。帧结构：DA(6B) + SA(6B) + Type/Len(2B) + Payload(46-1500B) + FCS(4B)。FCS 由 CRC-32 算法计算。同时生成 12 字节 IPG。',  
-            detailFn: (ctx) => {  
-                const f = ctx.frame;  
-                return `<div class="pm-desc">  
-                    帧长度: <b class="text-cyan">${f.totalLen} Bytes</b>（含 Preamble+SFD 共 ${f.totalLen + 8}B）<br>  
-                    DA: <code>${f.da}</code> &nbsp; SA: <code>${f.sa}</code> &nbsp; Type: <code>0x0800</code> &nbsp; Payload: ${f.payloadLen}B &nbsp; FCS: <code>${f.fcs}</code>  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">MAC 层输出（帧字节 + IPG）</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label f-pre">PRE×7</span>  
-                        <span class="fmt-label f-sfd">SFD</span>  
-                        <span class="fmt-label f-da">DA 6B</span>  
-                        <span class="fmt-label f-sa">SA 6B</span>  
-                        <span class="fmt-label f-type">Type 2B</span>  
-                        <span class="fmt-label f-payload">Payload ${f.payloadLen}B</span>  
-                        <span class="fmt-label f-fcs">FCS 4B</span>  
-                        <span class="fmt-label f-ipg">IPG 12B</span>  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>速率:</b> 800 Gbps</span>  
-                    <span class="info-chip"><b>帧大小:</b> ${f.totalLen}B</span>  
-                    <span class="info-chip"><b>CRC-32:</b> ${f.fcs}</span>  
-                </div>`;  
-            },  
-            widthLabel: '8-bit bytes',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'cbfc',  
-            icon: '💳',  
-            title: 'CBFC — 基于信用的流控 (TX)',  
-            layer: 'UEC',  
-            layerClass: 'uec-tag',  
-            uec: true,  
-            ref: 'UEC Specification 6.11.26',  
-            latencyMin: 3, latencyMax: 5,  
-            desc: '检查目标虚拟通道(VC)是否有足够信用。信用充足则透传帧；信用不足则阻塞等待 CF_Update。每个数据包消耗相应信用，通过 CC_Update/CF_Update 消息同步。',  
-            detailFn: (ctx) => {  
-                return `<div class="pm-desc">  
-                    信用检查通过 ✅ — VC 可用信用充足，帧透传到下一模块。<br>  
-                    支持 1-32 个虚拟通道，Lossless/Best-effort 两种模式。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">输出格式：帧数据不变（透传）</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label f-da">DA</span>  
-                        <span class="fmt-label f-sa">SA</span>  
-                        <span class="fmt-label f-type">Type</span>  
-                        <span class="fmt-label f-payload">Payload</span>  
-                        <span class="fmt-label f-fcs">FCS</span>  
-                        &nbsp; ← 帧数据不变，仅做信用扣减  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>VC:</b> 默认 VC0</span>  
-                    <span class="info-chip"><b>操作:</b> 信用扣减</span>  
-                    <span class="info-chip"><b>CC_Update:</b> 周期发送</span>  
-                </div>`;  
-            },  
-            widthLabel: '帧透传',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'llr',  
-            icon: '🔄',  
-            title: 'LLR — 链路层重传 (TX)',  
-            layer: 'UEC',  
-            layerClass: 'uec-tag',  
-            uec: true,  
-            ref: 'UEC Specification 6.11.25',  
-            latencyMin: 5, latencyMax: 10,  
-            desc: 'LLR-Eligible 帧：分配 20-bit frame_seq 序列号，编码到前导码 Byte1-3 中（Byte1[3:0]=0x7 标识eligible），帧存入 Replay Buffer 等待 ACK。LLR-Ineligible 帧：不分配序列号，直接透传。',  
-            detailFn: (ctx) => {  
-                const llr = ctx.llrMode;  
-                if (llr === 'disabled') {  
-                    return `<div class="pm-desc">LLR 未启用 — 帧直接透传，使用标准 IEEE 前导码。</div>  
-                    <div class="pm-data-view">  
-                        <div class="pm-data-label">前导码（标准）</div>  
-                        <div class="pm-data-box">  
-                            <span class="fmt-label f-pre">55 55 55 55 55 55 55</span>  
-                            <span class="fmt-label f-sfd">D5</span>  
-                            + 帧数据  
-                        </div>  
-                    </div>`;  
-                }  
-                if (llr === 'eligible') {  
-                    const seq = ctx.frameSeq;  
-                    const seqHex = seq.toString(16).toUpperCase().padStart(5, '0');  
-                    const d1High = (seq >> 16) & 0xF;  
-                    const d1 = ((d1High << 4) | 0x7).toString(16).toUpperCase().padStart(2, '0');  
-                    const d2 = ((seq >> 8) & 0xFF).toString(16).toUpperCase().padStart(2, '0');  
-                    const d3 = (seq & 0xFF).toString(16).toUpperCase().padStart(2, '0');  
-                    return `<div class="pm-desc">  
-                        LLR-Eligible ✅ — 分配 frame_seq = <b class="text-cyan">0x${seqHex}</b><br>  
-                        序列号编码到前导码 D1-D3：D1={seq[19:16],0x7}=0x${d1}, D2=0x${d2}, D3=0x${d3}<br>  
-                        帧存入 Replay Buffer，等待 ACK 或 NACK。  
-                    </div>  
-                    <div class="pm-data-view">  
-                        <div class="pm-data-label">前导码（LLR-Eligible）</div>  
-                        <div class="pm-data-box">  
-                            <span class="fmt-label" style="background:#ff9800;color:#000;">FB</span>  
-                            <span class="fmt-label f-seq">${d1}</span>  
-                            <span class="fmt-label f-seq">${d2}</span>  
-                            <span class="fmt-label f-seq">${d3}</span>  
-                            <span class="fmt-label f-pre">55</span>  
-                            <span class="fmt-label f-pre">55</span>  
-                            <span class="fmt-label f-pre">55</span>  
-                            <span class="fmt-label f-sfd">D5</span>  
-                            + 帧数据 + FCS  
-                        </div>  
-                    </div>  
-                    <div class="info-chips">  
-                        <span class="info-chip"><b>frame_seq:</b> 0x${seqHex} (20-bit)</span>  
-                        <span class="info-chip"><b>Byte1[3:0]:</b> 0x7 (eligible)</span>  
-                        <span class="info-chip"><b>Replay Buffer:</b> 已缓存</span>  
-                    </div>`;  
-                }  
-                // ineligible  
-                return `<div class="pm-desc">  
-                    LLR-Ineligible ⛔ — 不分配序列号，帧 不 存入 Replay Buffer。<br>  
-                    典型帧类型: Pause帧、PFC帧、CF_Update、LLDP帧。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">前导码（LLR-Ineligible）</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label" style="background:#ff9800;color:#000;">FB</span>  
-                        <span class="fmt-label f-pre">55 55 55 55 55 55</span>  
-                        <span class="fmt-label f-sfd">D5</span>  
-                        + 帧数据 + FCS  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>Byte1[3:0]:</b> 0x5 (ineligible)</span>  
-                    <span class="info-chip"><b>Replay Buffer:</b> 跳过</span>  
-                </div>`;  
-            },  
-            widthLabel: '帧+前导码',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'mac_ctrl',  
-            icon: '🎛️',  
-            title: 'MAC Control — 流控管理',  
-            layer: 'L2',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 31',  
-            latencyMin: 3, latencyMax: 5,  
-            desc: 'PAUSE/PFC 帧管理。若需发送流控帧，可在帧间隙插入 PAUSE 帧。正常数据帧直接透传。输出接口: CGMII (800G: 32 lanes × 64-bit @ 781.25 MHz)。',  
-            detailFn: (ctx) => {  
-                return `<div class="pm-desc">  
-                    正常数据帧 — 直接透传。<br>  
-                    CGMII 接口：TXD[2047:0] + TXC[31:0]，时钟 781.25 MHz。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">CGMII 输出</div>  
-                    <div class="pm-data-box">  
-                        TXD[2047:0] = 帧数据（32 lanes × 64-bit 并行）<br>  
-                        TXC[31:0] = 控制信号（标记 /S/, /T/, /I/ 等控制字符）  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>接口:</b> CGMII</span>  
-                    <span class="info-chip"><b>并行度:</b> 32×64-bit</span>  
-                    <span class="info-chip"><b>时钟:</b> 781.25 MHz</span>  
-                </div>`;  
-            },  
-            widthLabel: 'CGMII 2048-bit',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'rs',  
-            icon: '🔗',  
-            title: 'RS — Reconciliation Sublayer',  
-            layer: 'L1',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 169.3/122.3',  
-            latencyMin: 3, latencyMax: 5,  
-            desc: 'CGMII → PCS 内部接口适配。识别 /S/ (Start)、/T/ (Terminate)、/I/ (Idle) 控制字符。将帧数据分配到 8 Lanes (每 Lane 100G)，每 Lane 数据宽度 128-bit。DIC (Deficit Idle Count) 在此处计算 IPG 补偿。',  
-            detailFn: (ctx) => {  
-                const f = ctx.frame;  
-                const dic = DICCalculator.calculate(f.totalLen, 0, 12);  
-                return `<div class="pm-desc">  
-                    CGMII → PCS 内部接口转换。DIC 补偿：实际 IPG = ${dic.actualIPG} 字节。<br>  
-                    将帧拆分为 /S/ Start 控制字 + Data + /T/ Terminate + IDLE 序列。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">RS 层输出：控制字符标记</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label" style="background:#ff9800;color:#000;">/S/</span>  
-                        <span class="fmt-label f-pre">Preamble</span>  
-                        <span class="fmt-label f-sfd">SFD</span>  
-                        <span class="fmt-label f-payload">Frame Data (${f.totalLen}B)</span>  
-                        <span class="fmt-label" style="background:#ff5722;color:#fff;">/T/</span>  
-                        <span class="fmt-label f-ipg">IDLE ×${dic.actualIPG}</span>  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>Lane数:</b> 8 × 100G</span>  
-                    <span class="info-chip"><b>Lane宽度:</b> 128-bit</span>  
-                    <span class="info-chip"><b>DIC:</b> ${dic.newDIC}</span>  
-                    <span class="info-chip"><b>/T/位置:</b> ${dic.termPosition}</span>  
-                </div>`;  
-            },  
-            widthLabel: '8×128-bit',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'pcs',  
-            icon: '🧬',  
-            title: 'PCS — 64B/66B 编码 + Scrambler + AM',  
-            layer: 'L1 PCS',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 82/170',  
-            latencyMin: 10, latencyMax: 20,  
-            desc: '三个子步骤：① 64B/66B 编码器 — 每 64-bit 数据→66-bit 码块（2-bit Sync Header + 64-bit payload），数据块 Sync=01，控制块 Sync=10；② Scrambler — 多项式 G(x)=1+x³⁹+x⁵⁸ 对 payload 扰码（Sync Header 不扰码）；③ AM Insertion — 每 16383 块插入一个 128-bit Alignment Marker，每 Lane 独立 AM，含 Lane ID。',  
-            detailFn: (ctx) => {  
-                const f = ctx.frame;  
-                const llr = ctx.llrMode;  
-                const dataBlocks = Math.ceil(f.totalLen / 8);  
-
-                // Build 66B block visual  
-                let startBytes;  
-                if (llr === 'eligible') {  
-                    const s = ctx.frameSeq;  
-                    const d1 = (((s >> 16) & 0xF) << 4 | 0x7).toString(16).toUpperCase().padStart(2,'0');  
-                    const d2 = ((s >> 8) & 0xFF).toString(16).toUpperCase().padStart(2,'0');  
-                    const d3 = (s & 0xFF).toString(16).toUpperCase().padStart(2,'0');  
-                    startBytes = `<span class="fb f-bt">78</span><span class="fb f-seq">${d1}</span><span class="fb f-seq">${d2}</span><span class="fb f-seq">${d3}</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-sfd">D5</span>`;  
-                } else {  
-                    startBytes = `<span class="fb f-bt">78</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-pre">55</span><span class="fb f-sfd">D5</span>`;  
-                }  
-
-                return `<div class="pm-desc">  
-                    64B/66B 编码：1 Start Block + ${dataBlocks} Data Blocks + 1 Terminate Block + IDLE Blocks<br>  
-                    编码效率：64/66 = <b class="text-cyan">96.97%</b>。Scrambler 使用 58-bit LFSR 扰码。<br>  
-                    AM 每 16383 块插入一次（≈21μs），8 条 Virtual Lane 轮询分配。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">Start Block (Block Type 0x78)</div>  
-                    <div class="pm-data-box">  
-                        <span class="fb f-sync" style="font-weight:700;">10</span> ${startBytes}  
-                    </div>  
-                    <div class="pm-data-label mt-1">Data Blocks (×${dataBlocks})</div>  
-                    <div class="pm-data-box">  
-                        <span class="fb f-sync" style="background:#2196f3;color:#fff;font-weight:700;">01</span>  
-                        <span class="fb f-payload">D0</span><span class="fb f-payload">D1</span><span class="fb f-payload">D2</span><span class="fb f-payload">D3</span>  
-                        <span class="fb f-payload">D4</span><span class="fb f-payload">D5</span><span class="fb f-payload">D6</span><span class="fb f-payload">D7</span>  
-                        &nbsp;... × ${dataBlocks}  
-                    </div>  
-                    <div class="pm-data-label mt-1">Terminate Block + Scrambler + AM</div>  
-                    <div class="pm-data-box">  
-                        <span class="fb f-sync" style="font-weight:700;">10</span>  
-                        <span class="fb" style="background:#ff5722;color:#fff;">87</span>  
-                        <span class="fb f-ipg">00</span>×7  
-                        &nbsp;→ Scrambler(G(x)=1+x³⁹+x⁵⁸) → AM(per 16383 blocks)  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>编码率:</b> 64/66 = 96.97%</span>  
-                    <span class="info-chip"><b>块总数:</b> ~${dataBlocks + 2}</span>  
-                    <span class="info-chip"><b>AM间隔:</b> 16383 blocks</span>  
-                    <span class="info-chip"><b>Scrambler:</b> LFSR 58-bit</span>  
-                    <span class="info-chip"><b>VL:</b> 8 Virtual Lanes</span>  
-                </div>`;  
-            },  
-            widthLabel: '66-bit blocks',  
-            efficiency: '96.97%',  
-        },  
-        {  
-            id: 'fec',  
-            icon: '🛡️',  
-            title: 'FEC — RS(544,514) 前向纠错编码',  
-            layer: 'L1 FEC',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 91/119.2/171',  
-            latencyMin: 50, latencyMax: 100,  
-            desc: 'Reed-Solomon RS(544,514) over GF(2¹⁰)。先经 Transcoder 将 66-bit PCS 块转为 10-bit FEC 符号。每码字 514 个信息符号 + 30 个校验符号 = 544 符号。纠错能力：最多 15 个符号错误。Pre-FEC BER ≤ 5×10⁻⁵，Post-FEC BER ≤ 10⁻¹²。',  
-            detailFn: (ctx) => {  
-                return `<div class="pm-desc">  
-                    Transcoder: 66-bit PCS blocks → 10-bit FEC symbols → 码字组装<br>  
-                    RS(544,514): 514 × 10-bit = 5140-bit 信息 + 30 × 10-bit = 300-bit 校验 = 5440-bit 码字<br>  
-                    编码率: <b class="text-cyan">514/544 = 94.49%</b>  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">FEC 码字结构</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label f-fec-d">Data: 514 symbols (5140-bit)</span>  
-                        <span class="fmt-label f-fec-p">Parity: 30 symbols (300-bit)</span>  
-                        &nbsp;= 544 symbols (5440-bit) per codeword  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>算法:</b> RS(544,514)</span>  
-                    <span class="info-chip"><b>有限域:</b> GF(2¹⁰)</span>  
-                    <span class="info-chip"><b>纠错:</b> ≤15 symbols</span>  
-                    <span class="info-chip"><b>编码率:</b> 94.49%</span>  
-                    <span class="info-chip"><b>Pre-FEC BER:</b> ≤5×10⁻⁵</span>  
-                    <span class="info-chip"><b>Post-FEC BER:</b> ≤10⁻¹²</span>  
-                </div>`;  
-            },  
-            widthLabel: '10-bit symbols',  
-            efficiency: '94.49%',  
-        },  
-        {  
-            id: 'pma',  
-            icon: '⚙️',  
-            title: 'PMA — Gearbox & Lane Mapping',  
-            layer: 'L1 PMA',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 169.6/122.5',  
-            latencyMin: 10, latencyMax: 20,  
-            desc: 'PMA TX Gearbox: FEC 码字 → SerDes 位宽适配。时钟域转换。Lane 顺序调整与 Physical Lane 映射。Lane Polarity 控制。数据串行化准备。',  
-            detailFn: (ctx) => {  
-                let laneHtml = '';  
-                for (let i = 0; i < 8; i++) {  
-                    laneHtml += `<div class="lane-box${i < 4 ? ' active' : ''}">  
-                        <div class="lane-id">PL${i}</div>  
-                        <div>VL${i}</div>  
-                        <div style="font-size:0.9em;color:var(--text-muted);">100G</div>  
-                    </div>`;  
-                }  
-                return `<div class="pm-desc">  
-                    FEC 码字 → SerDes 并行位宽（128/256-bit per lane）。<br>  
-                    8 Physical Lanes，每 Lane 100 Gbps。Lane 极性可调。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">Physical Lane 映射 (8 × 100G)</div>  
-                    <div class="lane-vis">${laneHtml}</div>  
-                    <div class="pm-data-label mt-1">输出格式</div>  
-                    <div class="pm-data-box">  
-                        Per Lane: 128-bit / 256-bit parallel data → SerDes input  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>Lanes:</b> 8 Physical</span>  
-                    <span class="info-chip"><b>每Lane:</b> 128/256-bit 并行</span>  
-                    <span class="info-chip"><b>Lane Polarity:</b> 可配</span>  
-                </div>`;  
-            },  
-            widthLabel: '8×128-bit par.',  
-            efficiency: '100%',  
-        },  
-        {  
-            id: 'serdes',  
-            icon: '⚡',  
-            title: 'SerDes TX — 串行化 & PAM4 调制',  
-            layer: 'L1 SerDes',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'OIF CEI-56G/112G',  
-            latencyMin: 50, latencyMax: 100,  
-            desc: '三个子步骤：① Parallel-to-Serial Converter — 每 Lane 独立 Serializer；② PAM4 Modulator — 每符号 2-bit（00→-3, 01→-1, 10→+1, 11→+3），符号速率 106.25 Gbaud/Lane；③ Pre-Emphasis & FFE — 3-5 Tap 前向均衡器补偿信道损耗。',  
-            detailFn: (ctx) => {  
-                // Generate pseudo PAM4 eye bars  
-                let eyeHtml = '';  
-                const levels = ['-3', '-1', '+1', '+3'];  
-                const colors = ['#f44336', '#ff9800', '#4caf50', '#2196f3'];  
-                for (let i = 0; i < 32; i++) {  
-                    const lvl = Math.floor(Math.random() * 4);  
-                    const h = 12 + lvl * 12 + Math.random() * 8;  
-                    eyeHtml += `<div class="eye-bar" style="height:${h}px;background:${colors[lvl]};"></div>`;  
-                }  
-
-                return `<div class="pm-desc">  
-                    并行→串行转换 + PAM4 四电平调制 + FFE 预加重。<br>  
-                    8 Lanes × 106.25 Gbaud × 2 bit/symbol = <b class="text-cyan">800 Gbps</b>  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">PAM4 电平映射</div>  
-                    <div class="pm-data-box">  
-                        <span class="fmt-label f-pam4">00 → -3</span>  
-                        <span class="fmt-label f-pam4">01 → -1</span>  
-                        <span class="fmt-label f-pam4">10 → +1</span>  
-                        <span class="fmt-label f-pam4">11 → +3</span>  
-                        &nbsp; Gray 编码 · 106.25 Gbaud/Lane  
-                    </div>  
-                    <div class="pm-data-label mt-1">PAM4 符号序列示意（Per Lane）</div>  
-                    <div class="pam4-eye">${eyeHtml}</div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>调制:</b> PAM4</span>  
-                    <span class="info-chip"><b>Baud:</b> 106.25 Gbaud</span>  
-                    <span class="info-chip"><b>FFE:</b> 3-5 Taps</span>  
-                    <span class="info-chip"><b>输出:</b> 800-1200 mVpp 差分</span>  
-                    <span class="info-chip"><b>TJ:</b> &lt;0.30 UI</span>  
-                </div>`;  
-            },  
-            widthLabel: 'PAM4 serial',  
-            efficiency: '~100%',  
-        },  
-        {  
-            id: 'tx_driver',  
-            icon: '📡',  
-            title: 'TX Driver — 发送驱动器',  
-            layer: 'L1 Analog',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'OIF CEI-112G',  
-            latencyMin: 2, latencyMax: 5,  
-            desc: '差分输出驱动器。输出摆幅 800-1200 mVpp 可调。电气接口：CAUI-8 (Chip-to-Module)。将 PAM4 电信号驱动到 PCB Trace 连接光模块。',  
-            detailFn: (ctx) => {  
-                return `<div class="pm-desc">  
-                    模拟驱动器将 PAM4 数字信号转为高速差分电信号。<br>  
-                    输出通过 CAUI-8 电气接口连接到光模块或铜缆。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">电气信号参数</div>  
-                    <div class="pm-data-box">  
-                        差分输出: 800-1200 mVpp · PAM4 四电平 · 8 Lanes<br>  
-                        接口: CAUI-8 · OIF CEI-112G 规格  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>Swing:</b> 800-1200 mVpp</span>  
-                    <span class="info-chip"><b>接口:</b> CAUI-8</span>  
-                    <span class="info-chip"><b>Lane数:</b> 8</span>  
-                </div>`;  
-            },  
-            widthLabel: '差分电信号',  
-            efficiency: '~100%',  
-        },  
-        {  
-            id: 'pmd',  
-            icon: '💡',  
-            title: 'PMD — 电光转换 & 光模块输出',  
-            layer: 'L1 PMD',  
-            layerClass: '',  
-            uec: false,  
-            ref: 'IEEE 802.3 Clause 169.7/122.6',  
-            latencyMin: 5, latencyMax: 15,  
-            desc: '光模块接口(OSFP/QSFP-DD800)接收 CAUI-8 电信号，通过 E/O（电光转换）将电信号调制到光信号。激光器类型: VCSEL(SR)/EML(DR)/DML。典型波长: 850nm(SR)/1310nm(DR)。光功率 0~+5 dBm。经光纤传输到对端。',  
-            detailFn: (ctx) => {  
-                return `<div class="pm-desc">  
-                    电信号 → 光信号。经 OSFP / QSFP-DD800 光模块发送到光纤链路。<br>  
-                    <b class="text-green">✅ TX 路径处理完成！</b> 数据已从 MAC Client 到达光纤出口。  
-                </div>  
-                <div class="pm-data-view">  
-                    <div class="pm-data-label">光信号输出</div>  
-                    <div class="pm-data-box" style="background:linear-gradient(90deg,rgba(255,213,79,0.15),rgba(255,112,67,0.15));border-color:rgba(255,213,79,0.3);">  
-                        <span class="fmt-label f-light">🔆 8λ × 100G 光信号</span>  
-                        → 光纤 (SMF/MMF)  
-                        · 功率: 0~+5 dBm · 消光比: &gt;4dB  
-                    </div>  
-                </div>  
-                <div class="info-chips">  
-                    <span class="info-chip"><b>模块:</b> OSFP / QSFP-DD800</span>  
-                    <span class="info-chip"><b>激光器:</b> VCSEL/EML</span>  
-                    <span class="info-chip"><b>波长:</b> 850nm(SR)/1310nm(DR)</span>  
-                    <span class="info-chip"><b>光功率:</b> 0~+5 dBm</span>  
-                    <span class="info-chip"><b>距离:</b> 100m(SR)/2km(DR)/10km(FR)</span>  
-                </div>`;  
-            },  
-            widthLabel: '光信号',  
-            efficiency: '—',  
-        },  
-    ];  
-
-    // ============================================================  
-    //  State  
-    // ============================================================  
-
-    let currentStep = -1;  
-    let totalSteps = MODULES.length;  
-    let animCtrl = null;  
-    let cumulativeLatency = 0;  
-
-    function genFrameContext() {  
-        const len = parseInt(document.getElementById('selFrameLen').value);  
-        const payloadLen = Math.max(46, len - 18); // 6+6+2+FCS(4)  
-        const totalLen = payloadLen + 18; // without preamble  
-        return {  
-            frame: {  
-                totalLen: totalLen,  
-                payloadLen: payloadLen,  
-                da: Utils.randomMAC(),  
-                sa: Utils.randomMAC(),  
-                fcs: '0x' + Array.from({length:4}, ()=>Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join('').toUpperCase(),  
-            },  
-            llrMode: document.getElementById('selLLR').value,  
-            frameSeq: Utils.randomInt(0, 0xFFFFF),  
-        };  
-    }  
-
-    let ctx = genFrameContext();  
-
-    // ============================================================  
-    //  Build DOM  
-    // ============================================================  
-
-    function buildArchBar() {  
-        const bar = document.getElementById('archBar');  
-        bar.innerHTML = '';  
-        MODULES.forEach((m, i) => {  
-            if (i > 0) {  
-                const arrow = document.createElement('span');  
-                arrow.className = 'ab-arrow';  
-                arrow.textContent = '→';  
-                bar.appendChild(arrow);  
-            }  
-            const block = document.createElement('div');  
-            block.className = 'ab-block' + (m.uec ? ' uec-bar' : '');  
-            block.id = 'ab-' + m.id;  
-            block.textContent = m.title.split('—')[0].trim().replace(/^[^\w]*/, '').substring(0, 12);  
-            block.addEventListener('click', () => {  
-                scrollToModule(i);  
-            });  
-            bar.appendChild(block);  
-        });  
-    }  
-
-    function buildPipeline() {  
-        const pipeline = document.getElementById('pipeline');  
-        pipeline.innerHTML = '';  
-
-        MODULES.forEach((m, i) => {  
-            // Arrow  
-                        if (i > 0) {
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAC Client → PMD 报文发送全路径动画演示</title>
+    <link rel="stylesheet" href="common.css">
+    <style>
+        /* ========== Layout Styles ========== */
+        .main-layout {
+            display: flex;
+            gap: 1.5rem;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .left-panel {
+            width: 380px;
+            flex-shrink: 0;
+            position: sticky;
+            top: 80px;
+            height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+
+        .right-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        @media (max-width: 1200px) {
+            .main-layout {
+                flex-direction: column;
+            }
+            .left-panel {
+                width: 100%;
+                position: relative;
+                top: 0;
+                height: auto;
+                order: -1;
+            }
+        }
+
+        /* ========== Left Panel Styles ========== */
+        .control-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .control-card h3 {
+            color: var(--accent-cyan);
+            font-size: 1em;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .format-display {
+            background: rgba(0, 0, 0, 0.4);
+            border: 2px solid var(--accent-cyan);
+            border-radius: var(--border-radius);
+            padding: 1rem;
+            min-height: 200px;
+            font-family: var(--font-mono);
+            font-size: 0.8em;
+        }
+
+        .format-display .format-header {
+            color: var(--accent-cyan);
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .format-display .format-content {
+            line-height: 1.8;
+        }
+
+        .format-display .format-bytes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            margin: 0.5rem 0;
+        }
+
+        .format-display .byte-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+
+        .format-display .module-indicator {
+            color: var(--accent-orange);
+            font-weight: 600;
+            margin-top: 0.5rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* ========== Pipeline Container ========== */
+        .pipeline {
+            position: relative;
+        }
+
+        .pipeline-module {
+            background: var(--bg-card);
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            margin-bottom: 8px;
+            overflow: hidden;
+            transition: all 0.4s ease;
+            cursor: pointer;
+        }
+
+        .pipeline-module.active {
+            border-color: var(--accent-cyan);
+            box-shadow: var(--shadow-glow-cyan);
+        }
+
+        .pipeline-module.done {
+            border-color: rgba(105, 240, 174, 0.4);
+        }
+
+        .pipeline-module.uec {
+            border-left: 4px solid var(--accent-purple);
+        }
+
+        .pipeline-module .pm-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .pipeline-module .pm-header .pm-icon {
+            font-size: 1.2em;
+            margin-right: 10px;
+        }
+
+        .pipeline-module .pm-header .pm-title {
+            font-weight: 600;
+            font-size: 0.95em;
+            flex: 1;
+        }
+
+        .pipeline-module .pm-header .pm-layer {
+            font-size: 0.7em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: rgba(100, 255, 218, 0.1);
+            color: var(--accent-cyan);
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+
+        .pipeline-module .pm-header .pm-layer.uec-tag {
+            background: rgba(187, 134, 252, 0.15);
+            color: var(--accent-purple);
+        }
+
+        .pipeline-module .pm-header .pm-status {
+            font-size: 0.8em;
+            margin-left: 10px;
+            min-width: 20px;
+            text-align: center;
+        }
+
+        .pipeline-module .pm-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease, padding 0.3s ease;
+            padding: 0 18px;
+        }
+
+        .pipeline-module .pm-body.open {
+            max-height: 2000px;
+            padding: 0 18px 16px;
+        }
+
+        .pipeline-module .pm-desc {
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .pipeline-module .pm-ref {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* --- Mini Architecture Diagram --- */
+        .arch-bar {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 12px 8px;
+            overflow-x: auto;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: var(--border-radius-sm);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .arch-bar .ab-block {
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.7em;
+            font-weight: 600;
+            white-space: nowrap;
+            border: 2px solid var(--border-color);
+            background: var(--bg-card);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            text-align: center;
+            min-width: 65px;
+        }
+
+        .arch-bar .ab-block.active {
+            border-color: var(--accent-cyan);
+            background: rgba(100, 255, 218, 0.12);
+            box-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
+            color: var(--accent-cyan);
+        }
+
+        .arch-bar .ab-block.done {
+            border-color: rgba(105, 240, 174, 0.3);
+            color: var(--accent-green);
+        }
+
+        .arch-bar .ab-block.uec-bar {
+            border-color: rgba(187, 134, 252, 0.3);
+        }
+
+        .arch-bar .ab-arrow {
+            color: var(--text-muted);
+            font-size: 0.8em;
+            flex-shrink: 0;
+        }
+
+        /* --- Flow Arrow between modules --- */
+        .pipe-arrow {
+            text-align: center;
+            font-size: 1.1em;
+            color: var(--accent-cyan);
+            opacity: 0.35;
+            padding: 2px 0;
+            transition: opacity 0.3s ease;
+        }
+        .pipe-arrow.active {
+            opacity: 1;
+            animation: pulse-cyan 1.5s infinite;
+        }
+
+        /* --- Data Format Display --- */
+        .fmt-bytes {
+            display: inline-flex;
+            flex-wrap: wrap;
+            gap: 2px;
+        }
+
+        .fmt-bytes .fb {
+            display: inline-block;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-family: var(--font-mono);
+            font-size: 0.72em;
+            min-width: 22px;
+            text-align: center;
+        }
+
+        .fmt-label {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.7em;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        /* Specific field colors */
+        .f-da     { background: #1565C0; color: #fff; }
+        .f-sa     { background: #0277BD; color: #fff; }
+        .f-type   { background: #00838F; color: #fff; }
+        .f-payload{ background: #2196f3; color: #fff; }
+        .f-fcs    { background: #f44336; color: #fff; }
+        .f-pre    { background: #9c27b0; color: #fff; }
+        .f-sfd    { background: #e91e63; color: #fff; }
+        .f-ipg    { background: #607d8b; color: #fff; }
+        .f-seq    { background: #4caf50; color: #fff; }
+        .f-sync   { background: #ff9800; color: #000; }
+        .f-bt     { background: #ff9800; color: #000; }
+        .f-scr    { background: #6A1B9A; color: #fff; }
+        .f-am     { background: #00BCD4; color: #000; }
+        .f-fec-d  { background: #3F51B5; color: #fff; }
+        .f-fec-p  { background: #E65100; color: #fff; }
+        .f-pam4   { background: #263238; color: #69f0ae; border: 1px solid #69f0ae; }
+        .f-light  { background: linear-gradient(135deg, #FFD54F, #FF7043); color: #000; }
+
+        /* --- Info Chips --- */
+        .info-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .info-chip {
+            font-size: 0.7em;
+            padding: 3px 8px;
+            border-radius: 10px;
+            background: rgba(100, 255, 218, 0.08);
+            border: 1px solid rgba(100, 255, 218, 0.15);
+            color: var(--text-secondary);
+        }
+
+        .info-chip b {
+            color: var(--accent-cyan);
+        }
+
+        /* --- Detail Table --- */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 4px 12px;
+            font-size: 0.82em;
+            margin: 8px 0;
+        }
+
+        .detail-grid .dg-key {
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .detail-grid .dg-val {
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 0.92em;
+        }
+
+        /* --- Lane Distribution Visual --- */
+        .lane-vis {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 4px;
+            margin: 8px 0;
+        }
+
+        .lane-vis .lane-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 4px;
+            text-align: center;
+            font-size: 0.65em;
+            font-family: var(--font-mono);
+            transition: all 0.3s ease;
+        }
+
+        .lane-vis .lane-box.active {
+            border-color: var(--accent-cyan);
+            background: rgba(100, 255, 218, 0.1);
+        }
+
+        .lane-vis .lane-box .lane-id {
+            font-weight: 700;
+            color: var(--accent-cyan);
+        }
+
+        /* --- PAM4 Eye Diagram --- */
+        .pam4-eye {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 60px;
+            padding: 4px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+
+        .pam4-eye .eye-bar {
+            flex: 1;
+            border-radius: 2px 2px 0 0;
+            transition: height 0.3s ease;
+            min-width: 3px;
+        }
+
+        /* --- Summary Card --- */
+        .summary-card {
+            background: rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: 20px;
+            margin-top: var(--spacing-lg);
+        }
+
+        .summary-card h3 {
+            color: var(--accent-cyan);
+            margin-bottom: 12px;
+            font-size: 1em;
+        }
+
+        /* Log area */
+        .log-area {
+            background: rgba(0, 0, 0, 0.35);
+            border: 1px solid var(--border-color);
+            border-radius: var(--border-radius-sm);
+            padding: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: var(--font-mono);
+            font-size: 0.75em;
+            line-height: 1.8;
+        }
+
+        .log-area .log-entry {
+            animation: fadeIn 0.3s ease;
+        }
+
+        .log-area .log-entry .log-time {
+            color: var(--text-muted);
+            margin-right: 8px;
+        }
+
+        .log-area .log-entry .log-module {
+            color: var(--accent-cyan);
+            font-weight: 600;
+            margin-right: 6px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ========== Page Header ========== -->
+<div class="page-header">
+    <h1>🔬 MAC Client → PMD 报文发送全路径动画</h1>
+    <div class="subtitle">
+        800GbE 芯片内部 TX 路径 · 11 个处理模块逐级演示 · 基于 IEEE 802.3df & UEC Specification v1.0
+    </div>
+</div>
+
+<!-- ========== Main Layout ========== -->
+<div class="main-layout">
+    
+    <!-- ========== Left Panel: Controls & Format Display ========== -->
+    <aside class="left-panel">
+        <!-- Controls -->
+        <div class="control-card">
+            <h3>⚙️ 动画控制</h3>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">帧长度</label>
+                <select id="selFrameLen" class="form-control">
+                    <option value="64">64 字节（最小帧）</option>
+                    <option value="128">128 字节</option>
+                    <option value="256" selected>256 字节</option>
+                    <option value="512">512 字节</option>
+                    <option value="1518">1518 字节（最大标准帧）</option>
+                </select>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">LLR 模式</label>
+                <select id="selLLR" class="form-control">
+                    <option value="eligible" selected>LLR-Eligible（可重传）</option>
+                    <option value="ineligible">LLR-Ineligible（不可重传）</option>
+                    <option value="disabled">LLR 未启用</option>
+                </select>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">动画速度</label>
+                <select id="selSpeed" class="form-control">
+                    <option value="0.5">0.5×</option>
+                    <option value="1" selected>1×</option>
+                    <option value="2">2×</option>
+                    <option value="4">4× 快速</option>
+                </select>
+            </div>
+
+            <div class="btn-group" style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-primary" id="btnPlay" style="flex: 1;">▶ 播放</button>
+                <button class="btn btn-success" id="btnStep">⏭</button>
+                <button class="btn btn-warning" id="btnReset">⟲</button>
+            </div>
+
+            <div class="info-box mt-2" style="font-size: 0.8em; padding: 0.75rem;">
+                <code>Space</code>=播放/暂停 <code>→</code>=单步 <code>R</code>=重置
+            </div>
+        </div>
+
+        <!-- Real-time Format Display -->
+        <div class="control-card">
+            <h3>📦 当前报文格式</h3>
+            <div class="format-display" id="formatDisplay">
+                <div class="format-header">等待开始...</div>
+                <div class="format-content" id="formatContent">
+                    点击「播放」或「单步」开始动画
+                </div>
+                <div class="module-indicator" id="moduleIndicator">—</div>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="control-card">
+            <h3>📊 实时统计</h3>
+            <div class="detail-grid">
+                <div class="dg-key">当前模块:</div>
+                <div class="dg-val" id="statModule">—</div>
+                
+                <div class="dg-key">数据宽度:</div>
+                <div class="dg-val" id="statWidth">—</div>
+                
+                <div class="dg-key">编码效率:</div>
+                <div class="dg-val" id="statEfficiency">—</div>
+                
+                <div class="dg-key">累计延迟:</div>
+                <div class="dg-val" id="statLatency">0 ns</div>
+                
+                <div class="dg-key">处理步骤:</div>
+                <div class="dg-val" id="statStep">0 / 11</div>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="control-card" style="flex: 1; display: flex; flex-direction: column;">
+            <h3>📋 处理日志</h3>
+            <div class="log-area" id="logArea" style="flex: 1;">
+                <div class="log-entry"><span class="log-time">[00:00.000]</span><span class="log-module">SYSTEM</span> 等待启动...</div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ========== Right Content: Animation & Details ========== -->
+    <main class="right-content">
+        
+        <!-- Mini Architecture Bar -->
+        <div class="arch-bar" id="archBar">
+            <!-- JS will populate -->
+        </div>
+
+        <!-- Pipeline Modules -->
+        <div class="pipeline" id="pipeline">
+            <!-- JS will build all modules -->
+        </div>
+
+        <!-- Summary -->
+        <div class="summary-card" id="summaryCard" style="display:none;">
+            <h3>✅ TX 路径处理完成</h3>
+            <div id="summaryContent"></div>
+        </div>
+
+        <!-- Reference Table -->
+        <div class="section" style="margin-top: 2rem;">
+            <div class="section-title">📚 800GbE TX 路径延迟参考</div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr><th>模块</th><th>典型延迟</th><th>数据格式</th><th>标准引用</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>MAC Client</td><td>20-40 ns</td><td>以太网帧 (DA+SA+Type+Data+FCS)</td><td>IEEE 802.3 Clause 1-4</td></tr>
+                        <tr><td>CBFC (UEC)</td><td>~5 ns</td><td>信用检查，帧透传</td><td>UEC Spec 6.11.26</td></tr>
+                        <tr><td>LLR (UEC)</td><td>~10 ns</td><td>添加序列号到前导码</td><td>UEC Spec 6.11.25</td></tr>
+                        <tr><td>MAC Control</td><td>~5 ns</td><td>PAUSE/PFC 帧插入</td><td>IEEE 802.3 Clause 31</td></tr>
+                        <tr><td>RS (Reconciliation)</td><td>~5 ns</td><td>CGMII (TXD+TXC)</td><td>IEEE 802.3 Clause 169.3</td></tr>
+                        <tr><td>PCS (64B/66B + Scrambler + AM)</td><td>10-20 ns</td><td>66-bit 块流</td><td>IEEE 802.3 Clause 82/170</td></tr>
+                        <tr><td>FEC Encoder</td><td>50-100 ns</td><td>RS(544,514) 码字</td><td>IEEE 802.3 Clause 91/171</td></tr>
+                        <tr><td>PMA Gearbox</td><td>10-20 ns</td><td>SerDes 位宽适配</td><td>IEEE 802.3 Clause 169.6</td></tr>
+                        <tr><td>SerDes TX</td><td>50-100 ns</td><td>PAM4 串行比特流</td><td>OIF CEI-112G</td></tr>
+                        <tr><td>PMD (E/O)</td><td>5-15 ns</td><td>光信号</td><td>IEEE 802.3 Clause 169.7</td></tr>
+                        <tr style="font-weight:700;color:var(--accent-cyan)"><td>总计 (TX)</td><td>170-330 ns</td><td>—</td><td>—</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ========== Footer ========== -->
+<div class="page-footer">
+    Mac2Pmd.html · 800GbE MAC→PMD TX 全路径动画演示<br>
+    基于 IEEE 802.3df-2024 & Ultra Ethernet Specification v1.0
+</div>
+
+<!-- ========== Scripts ========== -->
+<script src="common.js"></script>
+<script>
+(function() {
+    'use strict';
+
+    // ============================================================
+    //  Module Definitions — 11 TX processing stages
+    // ============================================================
+
+    const MODULES = [
+        {
+            id: 'mac_client',
+            icon: '📦',
+            title: 'MAC Client — 以太网帧生成',
+            layer: 'L2',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 1-4',
+            latencyMin: 20, latencyMax: 40,
+            desc: '生成标准以太网帧。帧结构：DA(6B) + SA(6B) + Type/Len(2B) + Payload(46-1500B) + FCS(4B)。FCS 由 CRC-32 算法计算。同时生成 12 字节 IPG。',
+            formatFn: (ctx) => {
+                const f = ctx.frame;
+                return {
+                    header: `以太网帧 (${f.totalLen} Bytes)`,
+                    content: `
+<span class="byte-tag f-pre">前导码 7B</span>
+<span class="byte-tag f-sfd">SFD</span>
+<span class="byte-tag f-da">DA ${f.da}</span>
+<span class="byte-tag f-sa">SA ${f.sa}</span>
+<span class="byte-tag f-type">Type</span>
+<span class="byte-tag f-payload">Payload ${f.payloadLen}B</span>
+<span class="byte-tag f-fcs">FCS</span>
+<span class="byte-tag f-ipg">IPG 12B</span>`,
+                    details: `DA: ${f.da} | SA: ${f.sa} | Payload: ${f.payloadLen}B`
+                };
+            },
+            widthLabel: '8-bit bytes',
+            efficiency: '100%',
+        },
+        {
+            id: 'cbfc',
+            icon: '💳',
+            title: 'CBFC — 基于信用的流控 (TX)',
+            layer: 'UEC',
+            layerClass: 'uec-tag',
+            uec: true,
+            ref: 'UEC Specification 6.11.26',
+            latencyMin: 3, latencyMax: 5,
+            desc: '检查目标虚拟通道(VC)是否有足够信用。信用充足则透传帧；信用不足则阻塞等待 CF_Update。',
+            formatFn: (ctx) => ({
+                header: 'CBFC 信用检查',
+                content: '<span class="byte-tag f-pre">帧数据透传</span><span style="color:var(--accent-green)">✓ 信用充足</span>',
+                details: 'VC[0] 信用检查通过，帧继续传输'
+            }),
+            widthLabel: '帧透传',
+            efficiency: '100%',
+        },
+        {
+            id: 'llr',
+            icon: '🔄',
+            title: 'LLR — 链路层重传 (TX)',
+            layer: 'UEC',
+            layerClass: 'uec-tag',
+            uec: true,
+            ref: 'UEC Specification 6.11.25',
+            latencyMin: 5, latencyMax: 10,
+            desc: 'LLR-Eligible 帧：分配 20-bit frame_seq 序列号，编码到前导码 Byte1-3 中，帧存入 Replay Buffer 等待 ACK。',
+            formatFn: (ctx) => {
+                if (ctx.llrMode === 'disabled') {
+                    return { header: 'LLR 未启用', content: '标准前导码', details: '帧直接透传' };
+                }
+                if (ctx.llrMode === 'eligible') {
+                    const seq = ctx.frameSeq;
+                    const seqHex = seq.toString(16).toUpperCase().padStart(5, '0');
+                    return {
+                        header: `LLR-Eligible (Seq: 0x${seqHex})`,
+                        content: `<span class="byte-tag f-bt">FB</span><span class="byte-tag f-seq">${seqHex.substring(0,2)}</span><span class="byte-tag f-seq">${seqHex.substring(2,4)}</span><span class="byte-tag f-seq">${seqHex.substring(4)}</span><span class="byte-tag f-pre">55×3</span><span class="byte-tag f-sfd">D5</span>`,
+                        details: `序列号: 0x${seqHex} | 已存入 Replay Buffer`
+                    };
+                }
+                return { header: 'LLR-Ineligible', content: '无前导码序列号', details: '不存入 Replay Buffer' };
+            },
+            widthLabel: '帧+前导码',
+            efficiency: '100%',
+        },
+        {
+            id: 'mac_ctrl',
+            icon: '🎛️',
+            title: 'MAC Control — 流控管理',
+            layer: 'L2',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 31',
+            latencyMin: 3, latencyMax: 5,
+            desc: 'PAUSE/PFC 帧管理。正常数据帧直接透传。输出接口: CGMII (32 lanes × 64-bit)。',
+            formatFn: (ctx) => ({
+                header: 'CGMII 接口输出',
+                content: '<span class="byte-tag">TXD[2047:0]</span><span class="byte-tag">TXC[31:0]</span>',
+                details: '32 lanes × 64-bit @ 781.25 MHz'
+            }),
+            widthLabel: 'CGMII 2048-bit',
+            efficiency: '100%',
+        },
+        {
+            id: 'rs',
+            icon: '🔗',
+            title: 'RS — Reconciliation Sublayer',
+            layer: 'L1',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 169.3/122.3',
+            latencyMin: 3, latencyMax: 5,
+            desc: 'CGMII → PCS 内部接口适配。识别 /S/ /T/ /I/ 控制字符。计算 DIC。',
+            formatFn: (ctx) => {
+                const f = ctx.frame;
+                const dic = DICCalculator.calculate(f.totalLen, 0, 12);
+                return {
+                    header: 'RS 层输出 (/S/ /T/ 标记)',
+                    content: '<span class="byte-tag f-sync">/S/</span><span class="byte-tag f-pre">Preamble</span><span class="byte-tag f-payload">Data</span><span class="byte-tag" style="background:#ff5722">/T/</span><span class="byte-tag f-ipg">IDLE</span>',
+                    details: `DIC=${dic.newDIC} | /T/位置=${dic.termPosition} | 实际IPG=${dic.actualIPG}B`
+                };
+            },
+            widthLabel: '8×128-bit',
+            efficiency: '100%',
+        },
+        {
+            id: 'pcs',
+            icon: '🧬',
+            title: 'PCS — 64B/66B 编码 + Scrambler + AM',
+            layer: 'L1 PCS',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 82/170',
+            latencyMin: 10, latencyMax: 20,
+            desc: '64B/66B 编码器 + Scrambler (G(x)=1+x³⁹+x⁵⁸) + AM Insertion。',
+            formatFn: (ctx) => {
+                const dataBlocks = Math.ceil(ctx.frame.totalLen / 8);
+                return {
+                    header: '64B/66B 块流',
+                    content: `<span class="byte-tag f-sync">10</span><span class="byte-tag f-bt">Start</span> + ${dataBlocks}×<span class="byte-tag" style="background:#2196f3">01 Data</span> + <span class="byte-tag f-sync">10</span><span class="byte-tag" style="background:#ff5722">Term</span>`,
+                    details: `编码效率: 96.97% | 块数: ~${dataBlocks + 2} | AM间隔: 16383 blocks`
+                };
+            },
+            widthLabel: '66-bit blocks',
+            efficiency: '96.97%',
+        },
+        {
+            id: 'fec',
+            icon: '🛡️',
+            title: 'FEC — RS(544,514) 前向纠错编码',
+            layer: 'L1 FEC',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 91/119.2/171',
+            latencyMin: 50, latencyMax: 100,
+            desc: 'Reed-Solomon RS(544,514) over GF(2¹⁰)。514 信息符号 + 30 校验符号。',
+            formatFn: (ctx) => ({
+                header: 'RS(544,514) 码字',
+                content: '<span class="byte-tag f-fec-d">Data: 514 sym</span><span class="byte-tag f-fec-p">Parity: 30 sym</span>',
+                details: '编码率: 94.49% | 纠错能力: ≤15 symbols | BER: 5×10⁻⁵ → 10⁻¹²'
+            }),
+            widthLabel: '10-bit symbols',
+            efficiency: '94.49%',
+        },
+        {
+            id: 'pma',
+            icon: '⚙️',
+            title: 'PMA — Gearbox & Lane Mapping',
+            layer: 'L1 PMA',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 169.6/122.5',
+            latencyMin: 10, latencyMax: 20,
+            desc: 'PMA TX Gearbox: FEC 码字 → SerDes 位宽适配。Lane 映射。',
+            formatFn: (ctx) => ({
+                header: 'PMA Gearbox 输出',
+                content: '<span class="byte-tag">PL0</span><span class="byte-tag">PL1</span><span class="byte-tag">PL2</span><span class="byte-tag">PL3</span><span class="byte-tag">PL4</span><span class="byte-tag">PL5</span><span class="byte-tag">PL6</span><span class="byte-tag">PL7</span>',
+                details: '8 Physical Lanes × 128/256-bit 并行 → SerDes'
+            }),
+            widthLabel: '8×128-bit par.',
+            efficiency: '100%',
+        },
+        {
+            id: 'serdes',
+            icon: '⚡',
+            title: 'SerDes TX — 串行化 & PAM4 调制',
+            layer: 'L1 SerDes',
+            layerClass: '',
+            uec: false,
+            ref: 'OIF CEI-56G/112G',
+            latencyMin: 50, latencyMax: 100,
+            desc: 'Parallel-to-Serial + PAM4 Modulator (00→-3, 01→-1, 10→+1, 11→+3) + FFE。',
+            formatFn: (ctx) => ({
+                header: 'PAM4 串行信号',
+                content: '<span class="byte-tag f-pam4">00→-3</span><span class="byte-tag f-pam4">01→-1</span><span class="byte-tag f-pam4">10→+1</span><span class="byte-tag f-pam4">11→+3</span>',
+                details: '106.25 Gbaud/Lane × 8 Lanes = 800 Gbps | Gray编码'
+            }),
+            widthLabel: 'PAM4 serial',
+            efficiency: '~100%',
+        },
+        {
+            id: 'tx_driver',
+            icon: '📡',
+            title: 'TX Driver — 发送驱动器',
+            layer: 'L1 Analog',
+            layerClass: '',
+            uec: false,
+            ref: 'OIF CEI-112G',
+            latencyMin: 2, latencyMax: 5,
+            desc: '差分输出驱动器。输出摆幅 800-1200 mVpp。CAUI-8 接口。',
+            formatFn: (ctx) => ({
+                header: 'CAUI-8 差分信号',
+                content: '<span class="byte-tag">800-1200mVpp</span><span class="byte-tag">PAM4</span><span class="byte-tag">8 Lanes</span>',
+                details: '电气接口: CAUI-8 | 输出摆幅可调 | FFE预加重'
+            }),
+            widthLabel: '差分电信号',
+            efficiency: '~100%',
+        },
+        {
+            id: 'pmd',
+            icon: '💡',
+            title: 'PMD — 电光转换 & 光模块输出',
+            layer: 'L1 PMD',
+            layerClass: '',
+            uec: false,
+            ref: 'IEEE 802.3 Clause 169.7/122.6',
+            latencyMin: 5, latencyMax: 15,
+            desc: 'OSFP/QSFP-DD800 光模块 E/O 转换。VCSEL/EML 激光器。',
+            formatFn: (ctx) => ({
+                header: '🔆 光信号输出',
+                content: '<span class="byte-tag f-light">8λ × 100G</span>',
+                details: '光功率: 0~+5 dBm | 波长: 850nm/1310nm | 消光比: >4dB'
+            }),
+            widthLabel: '光信号',
+            efficiency: '—',
+        },
+    ];
+
+    // ============================================================
+    //  State
+    // ============================================================
+
+    let currentStep = -1;
+    let totalSteps = MODULES.length;
+    let animCtrl = null;
+    let cumulativeLatency = 0;
+
+    function genFrameContext() {
+        const len = parseInt(document.getElementById('selFrameLen').value);
+        const payloadLen = Math.max(46, len - 18);
+        const totalLen = payloadLen + 18;
+        return {
+            frame: {
+                totalLen: totalLen,
+                payloadLen: payloadLen,
+                da: Utils.randomMAC(),
+                sa: Utils.randomMAC(),
+                fcs: '0x' + Array.from({length:4}, ()=>Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join('').toUpperCase(),
+            },
+            llrMode: document.getElementById('selLLR').value,
+            frameSeq: Utils.randomInt(0, 0xFFFFF),
+        };
+    }
+
+    let ctx = genFrameContext();
+
+    // ============================================================
+    //  Update Format Display
+    // ============================================================
+
+    function updateFormatDisplay(moduleIndex) {
+        const display = document.getElementById('formatDisplay');
+        const header = display.querySelector('.format-header');
+        const content = display.querySelector('.format-content');
+        const indicator = display.querySelector('.module-indicator');
+
+        if (moduleIndex < 0 || moduleIndex >= MODULES.length) {
+            header.textContent = '等待开始...';
+            content.innerHTML = '点击「播放」或「单步」开始动画';
+            indicator.textContent = '—';
+            return;
+        }
+
+        const m = MODULES[moduleIndex];
+        const format = m.formatFn(ctx);
+
+        header.textContent = format.header;
+        content.innerHTML = '<div class="format-bytes">' + format.content + '</div>';
+        if (format.details) {
+            content.innerHTML += '<div style="margin-top:0.75rem;color:var(--text-secondary);">' + format.details + '</div>';
+        }
+        indicator.textContent = `当前模块: ${m.title.split('—')[0].trim()}`;
+    }
+
+    // ============================================================
+    //  Build DOM
+    // ============================================================
+
+    function buildArchBar() {
+        const bar = document.getElementById('archBar');
+        bar.innerHTML = '';
+        MODULES.forEach((m, i) => {
+            if (i > 0) {
+                const arrow = document.createElement('span');
+                arrow.className = 'ab-arrow';
+                arrow.textContent = '→';
+                bar.appendChild(arrow);
+            }
+            const block = document.createElement('div');
+            block.className = 'ab-block' + (m.uec ? ' uec-bar' : '');
+            block.id = 'ab-' + m.id;
+            block.textContent = m.title.split('—')[0].trim().replace(/^[^\w]*/, '').substring(0, 12);
+            block.addEventListener('click', () => {
+                scrollToModule(i);
+            });
+            bar.appendChild(block);
+        });
+    }
+
+    function buildPipeline() {
+        const pipeline = document.getElementById('pipeline');
+        pipeline.innerHTML = '';
+
+        MODULES.forEach((m, i) => {
+            if (i > 0) {
                 const arrow = document.createElement('div');
                 arrow.className = 'pipe-arrow';
                 arrow.id = 'arrow-' + i;
@@ -1119,12 +927,10 @@
                 pipeline.appendChild(arrow);
             }
 
-            // Module card
             const card = document.createElement('div');
             card.className = 'pipeline-module' + (m.uec ? ' uec' : '');
             card.id = 'module-' + m.id;
 
-            // Header
             const header = document.createElement('div');
             header.className = 'pm-header';
             header.innerHTML = `
@@ -1135,7 +941,6 @@
             `;
             card.appendChild(header);
 
-            // Body (initially collapsed)
             const body = document.createElement('div');
             body.className = 'pm-body';
             body.id = 'body-' + m.id;
@@ -1145,7 +950,6 @@
             `;
             card.appendChild(body);
 
-            // Click to toggle
             header.addEventListener('click', () => {
                 body.classList.toggle('open');
             });
@@ -1161,15 +965,17 @@
     function executeStep() {
         if (currentStep >= totalSteps) {
             finishAnimation();
-            return false; // stop animation
+            return false;
         }
 
         const m = MODULES[currentStep];
         const latency = (m.latencyMin + m.latencyMax) / 2;
         cumulativeLatency += latency;
 
-        // Log
         addLog(m.title.split('—')[0].trim(), `开始处理 (延迟 ~${latency.toFixed(1)} ns)`);
+
+        // Update format display
+        updateFormatDisplay(currentStep);
 
         // Highlight arch bar
         document.querySelectorAll('.ab-block').forEach((el, i) => {
@@ -1182,31 +988,16 @@
         if (currentStep > 0) {
             const arrow = document.getElementById('arrow-' + currentStep);
             if (arrow) arrow.classList.add('active');
-            setTimeout(() => arrow.classList.remove('active'), 400);
+            setTimeout(() => arrow && arrow.classList.remove('active'), 400);
         }
 
         // Highlight module
-        document.querySelectorAll('.pipeline-module').forEach(el => {
-            el.classList.remove('active');
-        });
+        document.querySelectorAll('.pipeline-module').forEach(el => el.classList.remove('active'));
         const moduleEl = document.getElementById('module-' + m.id);
         moduleEl.classList.add('active');
 
-        // Open module body
-        const bodyEl = document.getElementById('body-' + m.id);
-        bodyEl.classList.add('open');
-
-        // Update body content
-        if (m.detailFn) {
-            bodyEl.innerHTML = m.detailFn(ctx);
-        }
-
-        // Status icon
-        const statusEl = document.getElementById('status-' + m.id);
-        statusEl.textContent = '⏳';
-
         // Scroll to module
-        Utils.scrollTo(moduleEl, 70);
+        Utils.scrollTo(moduleEl, 100);
 
         // Update stats
         document.getElementById('statModule').textContent = m.title.split('—')[0].trim();
@@ -1215,11 +1006,14 @@
         Utils.animateNumber(document.getElementById('statLatency'), cumulativeLatency - latency, cumulativeLatency, 400, 'int');
         document.getElementById('statStep').textContent = `${currentStep + 1} / ${totalSteps}`;
 
-        // Mark as done after short delay
+        // Status
+        const statusEl = document.getElementById('status-' + m.id);
+        statusEl.textContent = '⏳';
+
         setTimeout(() => {
             statusEl.textContent = '✅';
             moduleEl.classList.add('done');
-            addLog(m.title.split('—')[0].trim(), `处理完成`);
+            addLog(m.title.split('—')[0].trim(), '处理完成');
         }, 300);
 
         currentStep++;
@@ -1227,68 +1021,25 @@
     }
 
     function finishAnimation() {
-        addLog('SYSTEM', '🎉 TX 路径处理完成！数据已从 MAC Client 传输到 PMD 光纤出口。');
+        addLog('SYSTEM', '🎉 TX 路径处理完成！');
         
-        // Show summary
         const summaryCard = document.getElementById('summaryCard');
         summaryCard.style.display = 'block';
 
-        const overallEfficiency = (0.9697 * 0.9449 * 100).toFixed(2); // 64/66 * 514/544
-        const summaryHtml = `
+        const overallEfficiency = (0.9697 * 0.9449 * 100).toFixed(2);
+        document.getElementById('summaryContent').innerHTML = `
             <div class="detail-grid">
                 <div class="dg-key">总延迟:</div>
-                <div class="dg-val text-cyan">${cumulativeLatency.toFixed(1)} ns (${(cumulativeLatency / 1000).toFixed(2)} μs)</div>
-                
-                <div class="dg-key">帧长度:</div>
-                <div class="dg-val">${ctx.frame.totalLen} Bytes (不含前导码)</div>
-                
-                <div class="dg-key">编码开销:</div>
-                <div class="dg-val">64B/66B (3.03%) + RS(544,514) (5.51%) = ${(100 - parseFloat(overallEfficiency)).toFixed(2)}%</div>
-                
+                <div class="dg-val text-cyan">${cumulativeLatency.toFixed(1)} ns</div>
                 <div class="dg-key">总体编码效率:</div>
                 <div class="dg-val text-green">${overallEfficiency}%</div>
-                
-                <div class="dg-key">物理层速率:</div>
-                <div class="dg-val">800 Gbps × (64/66) × (514/544) ≈ <b class="text-cyan">694 Gbps</b> (有效 MAC 吞吐)</div>
-                
-                <div class="dg-key">传输介质:</div>
-                <div class="dg-val">8 × 100G PAM4 光信号 (106.25 Gbaud/Lane)</div>
-                
-                <div class="dg-key">LLR 模式:</div>
-                <div class="dg-val">${ctx.llrMode === 'eligible' ? 'Eligible (frame_seq = 0x' + ctx.frameSeq.toString(16).toUpperCase() + ')' : ctx.llrMode === 'ineligible' ? 'Ineligible (不存入 Replay Buffer)' : 'Disabled'}</div>
-                
-                <div class="dg-key">FEC 纠错能力:</div>
-                <div class="dg-val">≤15 符号错误 / 码字 · BER: 5×10⁻⁵ → 10⁻¹²</div>
-            </div>
-
-            <div class="info-box mt-2">
-                <b>🚀 关键路径总结:</b><br>
-                1️⃣ MAC Client 生成以太网帧 + FCS + IPG<br>
-                2️⃣ <b class="text-purple">UEC CBFC</b>: 信用流控检查<br>
-                3️⃣ <b class="text-purple">UEC LLR</b>: 序列号编码 (Eligible 帧存入 Replay Buffer)<br>
-                4️⃣ MAC Control: PAUSE/PFC 管理<br>
-                5️⃣ RS: CGMII → PCS 接口适配 + DIC 计算<br>
-                6️⃣ PCS: 64B/66B 编码 + Scrambler + AM 插入<br>
-                7️⃣ FEC: RS(544,514) 编码 (纠错冗余)<br>
-                8️⃣ PMA: Gearbox + Lane Mapping<br>
-                9️⃣ SerDes: 并串转换 + PAM4 调制 + FFE<br>
-                🔟 TX Driver: 差分电信号输出 (CAUI-8)<br>
-                1️⃣1️⃣ PMD: E/O 电光转换 → 光纤传输<br>
-            </div>
-
-            <div class="warning-box mt-2">
-                <b>⚠️ 注意事项:</b><br>
-                • UEC LLR Replay Buffer 深度需覆盖 RTT + 重传窗口<br>
-                • FEC 延迟 (50-100ns) 占 TX 总延迟的 ~30%<br>
-                • AM 必须在 FEC 之前插入 (PCS 层)<br>
-                • PAM4 调制对 SerDes 时钟精度要求极高 (±100 ppm)<br>
-                • 光模块 E/O 转换延迟随温度漂移，需 CDR 补偿
+                <div class="dg-key">有效 MAC 吞吐:</div>
+                <div class="dg-val">≈ 694 Gbps</div>
             </div>
         `;
-        document.getElementById('summaryContent').innerHTML = summaryHtml;
 
-        Utils.scrollTo(summaryCard, 60);
-
+        updateFormatDisplay(totalSteps - 1);
+        Utils.scrollTo(summaryCard, 100);
         if (animCtrl) animCtrl.stop();
     }
 
@@ -1297,48 +1048,32 @@
         cumulativeLatency = 0;
         ctx = genFrameContext();
 
-        // Clear highlights
-        document.querySelectorAll('.ab-block').forEach(el => {
-            el.classList.remove('active', 'done');
-        });
-        document.querySelectorAll('.pipeline-module').forEach(el => {
-            el.classList.remove('active', 'done');
-        });
-        document.querySelectorAll('.pm-body').forEach(el => {
-            el.classList.remove('open');
-        });
-        document.querySelectorAll('.pm-status').forEach(el => {
-            el.textContent = '';
-        });
-        document.querySelectorAll('.pipe-arrow').forEach(el => {
-            el.classList.remove('active');
-        });
+        document.querySelectorAll('.ab-block').forEach(el => el.classList.remove('active', 'done'));
+        document.querySelectorAll('.pipeline-module').forEach(el => el.classList.remove('active', 'done'));
+        document.querySelectorAll('.pm-status').forEach(el => el.textContent = '');
+        document.querySelectorAll('.pipe-arrow').forEach(el => el.classList.remove('active'));
 
-        // Reset stats
         document.getElementById('statModule').textContent = '—';
         document.getElementById('statWidth').textContent = '—';
         document.getElementById('statEfficiency').textContent = '—';
         document.getElementById('statLatency').textContent = '0 ns';
         document.getElementById('statStep').textContent = '0 / 11';
 
-        // Clear log
-        document.getElementById('logArea').innerHTML = '<div class="log-entry"><span class="log-time">[00:00.000]</span><span class="log-module">SYSTEM</span> 动画已重置，点击播放开始。</div>';
-
-        // Hide summary
+        document.getElementById('logArea').innerHTML = '<div class="log-entry"><span class="log-time">[00:00.000]</span><span class="log-module">SYSTEM</span> 动画已重置</div>';
         document.getElementById('summaryCard').style.display = 'none';
 
-        document.getElementById('statusMsg').innerHTML = '动画已重置。点击「自动播放」或「单步」开始新一轮演示。';
+        updateFormatDisplay(-1);
     }
 
     function scrollToModule(index) {
         const m = MODULES[index];
         const el = document.getElementById('module-' + m.id);
-        if (el) Utils.scrollTo(el, 70);
+        if (el) Utils.scrollTo(el, 100);
     }
 
     function addLog(module, message) {
         const logArea = document.getElementById('logArea');
-        const time = new Date().toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 });
+        const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
         const entry = document.createElement('div');
         entry.className = 'log-entry';
         entry.innerHTML = `<span class="log-time">[${time}]</span><span class="log-module">${module}</span> ${message}`;
@@ -1365,19 +1100,19 @@
 
         if (animCtrl.isRunning) {
             animCtrl.stop();
-            document.getElementById('btnPlay').innerHTML = '▶ 继续播放';
-            addLog('USER', '⏸ 动画已暂停');
+            document.getElementById('btnPlay').innerHTML = '▶ 播放';
+            addLog('USER', '⏸ 暂停');
         } else {
             animCtrl.start();
             document.getElementById('btnPlay').innerHTML = '⏸ 暂停';
-            addLog('USER', '▶ 动画开始播放');
+            addLog('USER', '▶ 播放');
         }
     });
 
     document.getElementById('btnStep').addEventListener('click', () => {
         if (animCtrl && animCtrl.isRunning) {
             animCtrl.stop();
-            document.getElementById('btnPlay').innerHTML = '▶ 继续播放';
+            document.getElementById('btnPlay').innerHTML = '▶ 播放';
         }
         if (currentStep >= totalSteps) {
             resetAnimation();
@@ -1387,24 +1122,12 @@
 
     document.getElementById('btnReset').addEventListener('click', () => {
         resetAnimation();
+        addLog('USER', '⟲ 重置');
     });
 
     document.getElementById('selSpeed').addEventListener('change', (e) => {
         const speed = parseFloat(e.target.value);
         if (animCtrl) animCtrl.setSpeed(speed);
-        addLog('USER', `动画速度调整为 ${speed}×`);
-    });
-
-    document.getElementById('selFrameLen').addEventListener('change', () => {
-        if (currentStep > 0) {
-            addLog('USER', '⚠️ 帧长度已修改，请重置动画后生效');
-        }
-    });
-
-    document.getElementById('selLLR').addEventListener('change', () => {
-        if (currentStep > 0) {
-            addLog('USER', '⚠️ LLR 模式已修改，请重置动画后生效');
-        }
     });
 
     // ============================================================
@@ -1412,37 +1135,27 @@
     // ============================================================
 
     Keyboard.init();
-    Keyboard.on(' ', () => {
-        document.getElementById('btnPlay').click();
-    });
-    Keyboard.on('ArrowRight', () => {
-        document.getElementById('btnStep').click();
-    });
-    Keyboard.on('r', () => {
-        document.getElementById('btnReset').click();
-    });
-    Keyboard.on('R', () => {
-        document.getElementById('btnReset').click();
-    });
+    Keyboard.on(' ', () => document.getElementById('btnPlay').click());
+    Keyboard.on('ArrowRight', () => document.getElementById('btnStep').click());
+    Keyboard.on('r', () => document.getElementById('btnReset').click());
+    Keyboard.on('R', () => document.getElementById('btnReset').click());
 
     // ============================================================
     //  Initialization
     // ============================================================
 
     window.addEventListener('DOMContentLoaded', () => {
-        // Initialize navigation
         CommonNav.init('mac2pmd', [
             { id: 'index', label: '目录', file: 'index.html' },
             { id: 'cbfc', label: 'PFC vs CBFC', file: 'CBFCvsBFC.html' },
             { id: 'mac2pmd', label: 'MAC→PMD', file: 'Mac2Pmd.html' }
         ]);
 
-        // Build UI
         buildArchBar();
         buildPipeline();
+        updateFormatDisplay(-1);
 
-        addLog('SYSTEM', '✅ Mac2Pmd 动画演示已加载完成');
-        addLog('SYSTEM', '📖 快捷键: Space=播放/暂停, → =单步, R=重置');
+        addLog('SYSTEM', '✅ Mac2Pmd 动画演示已加载');
     });
 
 })();
