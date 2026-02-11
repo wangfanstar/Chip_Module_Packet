@@ -1431,7 +1431,11 @@
 
     window.addEventListener('DOMContentLoaded', () => {
         // Initialize navigation
-        CommonNav.init('mac2pmd');
+        CommonNav.init('mac2pmd', [
+            { id: 'index', label: '目录', file: 'index.html' },
+            { id: 'cbfc', label: 'PFC vs CBFC', file: 'CBFCvsBFC.html' },
+            { id: 'mac2pmd', label: 'MAC→PMD', file: 'Mac2Pmd.html' }
+        ]);
 
         // Build UI
         buildArchBar();

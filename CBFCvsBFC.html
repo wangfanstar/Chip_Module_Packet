@@ -1,1544 +1,1694 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CBFC vs BFC — 信用流控 vs 基础流控 对比分析</title>
-    <link rel="stylesheet" href="common.css">
-    <style>
-        /* ---- Page-specific Styles ---- */
-        .section-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            padding: var(--spacing-xl);
-            margin-bottom: var(--spacing-xl);
-            transition: all var(--transition-normal);
-        }
-        .section-card:hover {
-            border-color: var(--border-color-hover);
-            box-shadow: var(--shadow-card-hover);
-        }
-        .section-card h2 {
-            margin-bottom: var(--spacing-lg);
-            padding-bottom: var(--spacing-sm);
-            border-bottom: 1px solid var(--border-color);
-        }
-        .section-card h3 {
-            margin-top: var(--spacing-lg);
-            margin-bottom: var(--spacing-md);
-            color: var(--accent-cyan);
-        }
+<!DOCTYPE html>  
+<html lang="zh-CN">  
+<head>  
+    <meta charset="UTF-8">  
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">  
+    <title>PFC vs CBFC 流控机制对比动画</title>  
+    <link rel="stylesheet" href="common.css">  
+    <style>  
+        /* ---- PFC vs CBFC 专用样式 ---- */  
+        .comparison-container {  
+            display: grid;  
+            grid-template-columns: 1fr 1fr;  
+            gap: 2rem;  
+            margin: 2rem 0;  
+        }  
 
-        /* ---- Comparison Grid ---- */
-        .compare-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: var(--spacing-lg);
-            margin: var(--spacing-lg) 0;
-        }
-        @media (max-width: 768px) {
-            .compare-grid { grid-template-columns: 1fr; }
-        }
+        .flow-control-column {  
+            background: var(--bg-card);  
+            border: 2px solid var(--border-color);  
+            border-radius: var(--border-radius);  
+            padding: 2rem;  
+            position: relative;  
+        }  
 
-        .compare-box {
-            border-radius: var(--border-radius);
-            padding: var(--spacing-lg);
-            position: relative;
-            overflow: hidden;
-        }
-        .compare-box.cbfc {
-            background: rgba(100, 255, 218, 0.05);
-            border: 2px solid rgba(100, 255, 218, 0.25);
-        }
-        .compare-box.bfc {
-            background: rgba(255, 171, 64, 0.05);
-            border: 2px solid rgba(255, 171, 64, 0.25);
-        }
-        .compare-box .box-title {
-            font-size: 1.3em;
-            font-weight: 700;
-            margin-bottom: var(--spacing-md);
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-sm);
-        }
-        .compare-box.cbfc .box-title { color: var(--accent-cyan); }
-        .compare-box.bfc .box-title { color: var(--accent-orange); }
-        .compare-box .box-badge {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 0.65em;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .compare-box.cbfc .box-badge {
-            background: rgba(100, 255, 218, 0.15);
-            color: var(--accent-cyan);
-        }
-        .compare-box.bfc .box-badge {
-            background: rgba(255, 171, 64, 0.15);
-            color: var(--accent-orange);
-        }
-        .compare-box ul {
-            list-style: none;
-            padding: 0;
-        }
-        .compare-box ul li {
-            padding: 6px 0;
-            padding-left: 20px;
-            position: relative;
-            font-size: 0.9em;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-        .compare-box ul li::before {
-            content: '▸';
-            position: absolute;
-            left: 0;
-            font-weight: bold;
-        }
-        .compare-box.cbfc ul li::before { color: var(--accent-cyan); }
-        .compare-box.bfc ul li::before { color: var(--accent-orange); }
+        .flow-control-column.pfc {  
+            border-left: 4px solid var(--accent-orange);  
+        }  
 
-        /* ---- Animation Canvas Area ---- */
-        .anim-canvas {
-            position: relative;
-            width: 100%;
-            height: 420px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            overflow: hidden;
-            margin: var(--spacing-md) 0;
-        }
-        .anim-canvas svg {
-            width: 100%;
-            height: 100%;
-        }
+        .flow-control-column.cbfc {  
+            border-left: 4px solid var(--accent-blue);  
+        }  
 
-        /* ---- Device Boxes in SVG ---- */
-        .device-label {
-            font-family: var(--font-mono);
-            font-size: 13px;
-            font-weight: 600;
-        }
-        .counter-label {
-            font-family: var(--font-mono);
-            font-size: 11px;
-        }
-        .counter-value {
-            font-family: var(--font-mono);
-            font-size: 14px;
-            font-weight: 700;
-        }
-        .msg-label {
-            font-family: var(--font-mono);
-            font-size: 10px;
-            font-weight: 600;
-        }
+        .fc-header {  
+            font-size: 1.2em;  
+            font-weight: 600;  
+            margin-bottom: 1.5rem;  
+            padding-bottom: 0.5rem;  
+            border-bottom: 2px solid var(--border-color);  
+        }  
 
-        /* ---- Packet Animation ---- */
-        .pkt-dot {
-            transition: none;
-        }
-        @keyframes pktMove {
-            0% { opacity: 1; }
-            100% { opacity: 1; }
-        }
+        .fc-header.pfc {  
+            color: var(--accent-orange);  
+            border-bottom-color: var(--accent-orange);  
+        }  
 
-        /* ---- Architecture Diagram ---- */
-        .arch-diagram {
-            display: flex;
-            flex-direction: column;
-            gap: var(--spacing-md);
-            padding: var(--spacing-lg);
-        }
-        .arch-row {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-md);
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        .arch-block {
-            background: var(--bg-card);
-            border: 2px solid var(--border-color);
-            border-radius: var(--border-radius-sm);
-            padding: var(--spacing-md) var(--spacing-lg);
-            text-align: center;
-            min-width: 130px;
-            transition: all var(--transition-normal);
-            position: relative;
-        }
-        .arch-block:hover {
-            border-color: var(--accent-cyan);
-            box-shadow: var(--shadow-glow-cyan);
-        }
-        .arch-block .arch-name {
-            font-weight: 700;
-            font-size: 0.95em;
-            color: var(--accent-cyan);
-        }
-        .arch-block .arch-desc {
-            font-size: 0.75em;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-        .arch-block.highlight-cbfc {
-            border-color: var(--accent-cyan);
-            background: rgba(100, 255, 218, 0.08);
-        }
-        .arch-block.highlight-bfc {
-            border-color: var(--accent-orange);
-            background: rgba(255, 171, 64, 0.08);
-        }
-        .arch-arrow {
-            font-size: 1.4em;
-            color: var(--accent-cyan);
-            flex-shrink: 0;
-        }
-        .arch-arrow-down {
-            text-align: center;
-            font-size: 1.4em;
-            color: var(--accent-cyan);
-        }
+        .fc-header.cbfc {  
+            color: var(--accent-blue);  
+            border-bottom-color: var(--accent-blue);  
+        }  ：q
 
-        /* ---- Feature Tag ---- */
-        .feature-tag {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 10px;
-            font-size: 0.75em;
-            font-weight: 600;
-            margin: 2px;
-        }
-        .tag-cbfc {
-            background: rgba(100, 255, 218, 0.12);
-            color: var(--accent-cyan);
-            border: 1px solid rgba(100, 255, 218, 0.3);
-        }
-        .tag-bfc {
-            background: rgba(255, 171, 64, 0.12);
-            color: var(--accent-orange);
-            border: 1px solid rgba(255, 171, 64, 0.3);
-        }
-        .tag-both {
-            background: rgba(187, 134, 252, 0.12);
-            color: var(--accent-purple);
-            border: 1px solid rgba(187, 134, 252, 0.3);
-        }
+        .fc-entity {  
+            background: rgba(0, 0, 0, 0.2);  
+            border: 1px solid var(--border-color);  
+            border-radius: var(--border-radius-sm);  
+            padding: 1.5rem;  
+            margin: 1rem 0;  
+            position: relative;  
+            min-height: 100px;  
+        }  
 
-        /* ---- Scenario Cards ---- */
-        .scenario-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: var(--spacing-lg);
-            margin: var(--spacing-lg) 0;
-        }
-        .scenario-card {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius);
-            padding: var(--spacing-lg);
-            transition: all var(--transition-normal);
-        }
-        .scenario-card:hover {
-            border-color: var(--accent-cyan);
-            transform: translateY(-3px);
-            box-shadow: var(--shadow-glow-cyan);
-        }
-        .scenario-card .scenario-icon {
-            font-size: 2em;
-            margin-bottom: var(--spacing-sm);
-        }
-        .scenario-card .scenario-title {
-            font-size: 1.05em;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: var(--spacing-sm);
-        }
-        .scenario-card .scenario-desc {
-            font-size: 0.85em;
-            color: var(--text-secondary);
-            line-height: 1.6;
-        }
-        .scenario-card .scenario-tags {
-            margin-top: var(--spacing-md);
-        }
+        .fc-entity.sender {  
+            border-left: 3px solid var(--accent-red);  
+        }  
 
-        /* ---- Control Panel ---- */
-        .ctrl-panel {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-md);
-            flex-wrap: wrap;
-            margin-bottom: var(--spacing-md);
-        }
+        .fc-entity.receiver {  
+            border-left: 3px solid var(--accent-green);  
+        }  
 
-        /* ---- Step Log ---- */
-        .step-log {
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid var(--border-color);
-            border-radius: var(--border-radius-sm);
-            padding: var(--spacing-md);
-            max-height: 180px;
-            overflow-y: auto;
-            font-family: var(--font-mono);
-            font-size: 0.8em;
-            line-height: 1.8;
-        }
-        .step-log .log-entry {
-            opacity: 0;
-            animation: fadeIn 0.3s ease forwards;
-        }
-        .step-log .log-entry.cbfc-msg { color: var(--accent-cyan); }
-        .step-log .log-entry.bfc-msg { color: var(--accent-orange); }
-        .step-log .log-entry.data-msg { color: var(--accent-blue); }
-        .step-log .log-entry.warn-msg { color: var(--accent-yellow); }
-        .step-log .log-entry .log-time {
-            color: var(--text-muted);
-            margin-right: 8px;
-        }
+        .fc-entity-name {  
+            font-size: 0.9em;  
+            font-weight: 600;  
+            color: var(--accent-cyan);  
+            margin-bottom: 0.5rem;  
+            text-transform: uppercase;  
+            letter-spacing: 0.5px;  
+        }  
 
-        /* ---- Versus Badge ---- */
-        .vs-badge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: var(--gradient-btn-primary);
-            color: #fff;
-            font-weight: 900;
-            font-size: 1em;
-            flex-shrink: 0;
-            box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
-        }
+        .fc-state {  
+            font-size: 0.85em;  
+            line-height: 1.6;  
+            color: var(--text-secondary);  
+            margin: 0.5rem 0;  
+        }  
 
-        /* ---- Highlight Row ---- */
-        .highlight-row {
-            display: flex;
-            align-items: center;
-            gap: var(--spacing-lg);
-            justify-content: center;
-            margin: var(--spacing-xl) 0;
-        }
+        .fc-state strong {  
+            color: var(--accent-cyan);  
+        }  
 
-        /* ---- Buffer Visualization ---- */
-        .buffer-viz {
-            display: flex;
-            gap: 3px;
-            align-items: flex-end;
-            height: 60px;
-            padding: var(--spacing-sm);
-            background: rgba(0,0,0,0.2);
-            border-radius: var(--border-radius-sm);
-        }
-        .buffer-cell {
-            width: 18px;
-            border-radius: 2px;
-            transition: height 0.3s ease, background 0.3s ease;
-        }
-        .buffer-cell.empty {
-            background: rgba(100, 255, 218, 0.1);
-            border: 1px solid rgba(100, 255, 218, 0.2);
-        }
-        .buffer-cell.used-vc0 { background: var(--accent-cyan); }
-        .buffer-cell.used-vc1 { background: var(--accent-purple); }
-        .buffer-cell.used-vc2 { background: var(--accent-blue); }
-        .buffer-cell.used-be  { background: var(--accent-orange); }
+        .fc-message-flow {  
+            display: flex;  
+            align-items: center;  
+            justify-content: center;  
+            padding: 1.5rem 0;  
+            margin: 1rem 0;  
+        }  
 
-        /* ---- Timeline ---- */
-        .timeline-bar {
-            position: relative;
-            height: 8px;
-            background: rgba(100, 255, 218, 0.1);
-            border-radius: 4px;
-            margin: var(--spacing-md) 0;
-            overflow: hidden;
-        }
-        .timeline-progress {
-            height: 100%;
-            background: var(--gradient-btn-primary);
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-    </style>
-</head>
-<body>
+        .fc-message-box {  
+            background: rgba(100, 255, 218, 0.1);  
+            border: 1px solid var(--accent-cyan);  
+            border-radius: var(--border-radius-sm);  
+            padding: 0.75rem 1rem;  
+            font-size: 0.85em;  
+            font-weight: 500;  
+            color: var(--accent-cyan);  
+            text-align: center;  
+            min-width: 120px;  
+            opacity: 0;  
+            animation: fadeInScale 0.5s ease forwards;  
+        }  
 
-<!-- ====== Navigation Bar ====== -->
-<div class="nav-bar">
-    <a class="nav-back" href="index.html">← 返回目录</a>
-</div>
+        .fc-message-box.active {  
+            opacity: 1;  
+            box-shadow: 0 0 15px rgba(100, 255, 218, 0.4);  
+        }  
 
-<!-- ====== Page Header ====== -->
-<div class="page-header">
-    <h1>CBFC vs BFC — 流控机制深度对比</h1>
-    <p class="subtitle">Credit-Based Flow Control vs Basic Flow Control (PFC/PAUSE) — 动画演示 · 架构设计 · 应用场景</p>
-    <p class="subtitle" style="font-size:0.8em; margin-top:6px; opacity:0.6;">基于 Ultra Ethernet Specification v1.0 § 5.2</p>
-</div>
+        .fc-arrow {  
+            font-size: 1.5em;  
+            margin: 0 0.5rem;  
+            opacity: 0;  
+            animation: slideArrow 0.5s ease forwards;  
+        }  
 
-<!-- ====== Main Content ====== -->
-<div class="container" id="main-tabs">
+        @keyframes fadeInScale {  
+            from {  
+                opacity: 0;  
+                transform: scale(0.8);  
+            }  
+            to {  
+                opacity: 1;  
+                transform: scale(1);  
+            }  
+        }  
 
-    <!-- Tab Navigation -->
-    <div class="tab-nav">
-        <button class="tab-btn active" data-tab="tab-overview">概览对比</button>
-        <button class="tab-btn" data-tab="tab-anim-cbfc">CBFC 动画</button>
-        <button class="tab-btn" data-tab="tab-anim-bfc">BFC 动画</button>
-        <button class="tab-btn" data-tab="tab-arch">架构设计</button>
-        <button class="tab-btn" data-tab="tab-scenarios">应用场景</button>
-        <button class="tab-btn" data-tab="tab-detail">技术细节</button>
+        @keyframes slideArrow {  
+            from {  
+                opacity: 0;  
+                transform: translateX(-10px);  
+            }  
+            to {  
+                opacity: 1;  
+                transform: translateX(0);  
+            }  
+        }  
+
+        /* 对比表格 */  
+        .comparison-table {  
+            width: 100%;  
+            border-collapse: collapse;  
+            margin: 2rem 0;  
+            font-size: 0.9em;  
+        }  
+
+        .comparison-table th,  
+        .comparison-table td {  
+            padding: 1rem;  
+            text-align: left;  
+            border: 1px solid var(--border-color);  
+        }  
+
+        .comparison-table th {  
+            background: rgba(100, 255, 218, 0.1);  
+            color: var(--accent-cyan);  
+            font-weight: 600;  
+        }  
+
+        .comparison-table tr:nth-child(even) {  
+            background: rgba(0, 0, 0, 0.2);  
+        }  
+
+        .comparison-table .feature-name {  
+            font-weight: 600;  
+            color: var(--text-primary);  
+            min-width: 180px;  
+        }  
+
+        .comparison-table .pfc-feature {  
+            color: var(--accent-orange);  
+        }  
+
+        .comparison-table .cbfc-feature {  
+            color: var(--accent-blue);  
+        }  
+
+        .comparison-table .same-feature {  
+            color: var(--accent-green);  
+        }  
+
+        /* 时序图 */  
+        .timeline-diagram {  
+            background: rgba(0, 0, 0, 0.2);  
+            border: 1px solid var(--border-color);  
+            border-radius: var(--border-radius);  
+            padding: 2rem;  
+            margin: 2rem 0;  
+            position: relative;  
+            overflow-x: auto;  
+        }  
+
+        .timeline-track {  
+            display: flex;  
+            align-items: center;  
+            margin: 1.5rem 0;  
+            min-height: 60px;  
+        }  
+
+        .timeline-label {  
+            min-width: 120px;  
+            font-size: 0.85em;  
+            font-weight: 600;  
+            color: var(--accent-cyan);  
+            text-align: right;  
+            padding-right: 1rem;  
+        }  
+
+        .timeline-events {  
+            flex: 1;  
+            display: flex;  
+            align-items: center;  
+            position: relative;  
+            height: 60px;  
+        }  
+
+        .timeline-event {  
+            position: absolute;  
+            width: 70px;  
+            height: 50px;  
+            border-radius: var(--border-radius-sm);  
+            display: flex;  
+            align-items: center;  
+            justify-content: center;  
+            font-size: 0.75em;  
+            font-weight: 600;  
+            cursor: pointer;  
+            transition: all var(--transition-normal);  
+        }  
+
+        .timeline-event:hover {  
+            transform: scale(1.1);  
+            box-shadow: var(--shadow-glow-cyan);  
+        }  
+
+        .timeline-event.pfc-packet {  
+            background: var(--accent-orange);  
+            color: #000;  
+        }  
+
+        .timeline-event.pfc-ctrl {  
+            background: var(--accent-yellow);  
+            color: #000;  
+        }  
+
+        .timeline-event.cbfc-data {  
+            background: var(--accent-blue);  
+            color: #fff;  
+        }  
+
+        .timeline-event.cbfc-credit {  
+            background: var(--accent-green);  
+            color: #000;  
+        }  
+
+        .timeline-line {  
+            position: absolute;  
+            top: 50%;  
+            left: 0;  
+            right: 0;  
+            height: 2px;  
+            background: var(--border-color);  
+            z-index: 0;  
+        }  
+
+        /* 缓冲区可视化 */  
+        .buffer-viz {  
+            background: var(--bg-card);  
+            border: 1px solid var(--border-color);  
+            border-radius: var(--border-radius);  
+            padding: 1.5rem;  
+            margin: 1rem 0;  
+        }  
+
+        .buffer-name {  
+            font-size: 0.9em;  
+            font-weight: 600;  
+            color: var(--accent-cyan);  
+            margin-bottom: 0.5rem;  
+        }  
+
+        .buffer-bar {  
+            width: 100%;  
+            height: 40px;  
+            background: rgba(0, 0, 0, 0.3);  
+            border: 1px solid var(--border-color);  
+            border-radius: var(--border-radius-xs);  
+            overflow: hidden;  
+            position: relative;  
+            margin: 0.5rem 0;  
+        }  
+
+        .buffer-fill {  
+            height: 100%;  
+            background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));  
+            width: 0%;  
+            transition: width 0.3s ease;  
+            display: flex;  
+            align-items: center;  
+            justify-content: flex-end;  
+            padding-right: 0.5rem;  
+            font-size: 0.75em;  
+            font-weight: 600;  
+            color: #000;  
+        }  
+
+        .buffer-threshold {  
+            position: absolute;  
+            top: 0;  
+            bottom: 0;  
+            width: 2px;  
+            background: var(--accent-red);  
+            opacity: 0.7;  
+            z-index: 1;  
+        }  
+
+        .buffer-info {  
+            display: flex;  
+            justify-content: space-between;  
+            font-size: 0.8em;  
+            color: var(--text-muted);  
+            margin-top: 0.5rem;  
+        }  
+
+        /* 控制面板 */  
+        .fc-controls {  
+            display: flex;  
+            gap: 1rem;  
+            margin: 2rem 0;  
+            flex-wrap: wrap;  
+            align-items: center;  
+        }  
+
+        .fc-speed-control {  
+            display: flex;  
+            align-items: center;  
+            gap: 1rem;  
+        }  
+
+        .fc-speed-control label {  
+            font-size: 0.9em;  
+            color: var(--text-secondary);  
+            min-width: 100px;  
+        }  
+
+        .fc-speed-control input[type="range"] {  
+            width: 120px;  
+        }  
+
+        .comparison-view-toggle {  
+            display: flex;  
+            gap: 0.5rem;  
+        }  
+
+        .comparison-view-toggle button {  
+            padding: 0.5rem 1rem;  
+            border: 1px solid var(--border-color);  
+            background: transparent;  
+            color: var(--text-secondary);  
+            border-radius: var(--border-radius-xs);  
+            cursor: pointer;  
+            transition: all var(--transition-fast);  
+            font-size: 0.85em;  
+        }  
+
+        .comparison-view-toggle button.active {  
+            background: var(--accent-cyan);  
+            color: #000;  
+            border-color: var(--accent-cyan);  
+        }  
+
+        .comparison-view-toggle button:hover {  
+            border-color: var(--accent-cyan);  
+            color: var(--accent-cyan);  
+        }  
+
+        /* 切换视图 */  
+        .view-section {  
+            display: none;  
+        }  
+
+        .view-section.active {  
+            display: block;  
+        }  
+
+        @media (max-width: 768px) {  
+            .comparison-container {  
+                grid-template-columns: 1fr;  
+            }  
+
+            .timeline-events {  
+                height: 100px;  
+            }  
+
+            .timeline-event {  
+                width: 60px;  
+                height: 45px;  
+                font-size: 0.7em;  
+            }  
+        }  
+    </style>  
+</head>  
+<body>  
+    <!-- 导航栏 -->  
+    <nav class="nav-bar"></nav>  
+
+    <!-- 页面头部 -->  
+    <div class="page-header">  
+        <h1>PFC vs CBFC 流控机制对比动画</h1>  
+        <p class="subtitle">优先级流控 vs 信用流控 完整对比展示</p>  
+    </div>  
+
+    <!-- 主容器 -->  
+    <div class="container">  
+
+        <!-- 概述部分 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">📊 无损网络中的流量控制</h2>  
+            <p>  
+                在数据中心和高性能计算网络中，无损包传送至关重要。IEEE 802.1Q 定义的 PFC（Priority Flow Control）  
+                和 UE 规范中的 CBFC（Credit-Based Flow Control）是两种重要的链路层流控机制。  
+            </p>  
+            <div class="info-box">  
+                <strong>核心目标：</strong>防止接收缓冲区溢出导致的包丢失，实现无损数据传输。  
+            </div>  
+        </section>  
+
+        <!-- 控制面板 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">⚙️ 动画控制与视图切换</h2>  
+            <div class="fc-controls">  
+                <div>  
+                    <button class="btn btn-primary" id="fc-play-btn">▶ 开始动画</button>  
+                    <button class="btn btn-outline" id="fc-pause-btn">⏸ 暂停</button>  
+                    <button class="btn btn-outline" id="fc-reset-btn">🔄 重置</button>  
+                    <button class="btn btn-outline" id="fc-step-btn">➡ 下一步</button>  
+                </div>  
+                <div class="fc-speed-control">  
+                    <label for="fc-speed">动画速度：</label>  
+                    <input type="range" id="fc-speed" min="0.5" max="3" step="0.5" value="1" />  
+                    <span id="fc-speed-val">1x</span>  
+                </div>  
+            </div>  
+            <div class="comparison-view-toggle">  
+                <button id="view-mechanism" class="btn-view active">机制原理</button>  
+                <button id="view-sequence" class="btn-view">时序对比</button>  
+                <button id="view-comparison" class="btn-view">特性对比表</button>  
+            </div>  
+        </section>  
+
+        <!-- 机制原理视图 -->  
+        <section class="section mb-3 view-section active" id="mechanism-view">  
+            <h2 class="section-title">🔄 流控机制原理</h2>  
+
+            <div class="comparison-container">  
+                <!-- PFC 机制 -->  
+                <div class="flow-control-column pfc">  
+                    <div class="fc-header pfc">  
+                        🟠 PFC - Priority Flow Control  
+                    </div>  
+                    <div class="info-box">  
+                        <strong>标准：</strong>IEEE 802.1Q-2022 第 36 条款<br>  
+                        <strong>控制粒度：</strong>优先级（CoS）级别，8 个优先级  
+                    </div>  
+
+                    <h3 style="color: var(--accent-cyan); margin-top: 1rem;">工作原理</h3>  
+                    <div class="fc-entity receiver">  
+                        <div class="fc-entity-name">📥 接收端</div>  
+                        <div class="fc-state">  
+                            监控接收缓冲区深度<br>  
+                            当缓冲占用 <strong>超过阈值</strong> 时，<br>  
+                            发送 <strong>PAUSE 帧</strong> 暂停发送端<br>  
+                            缓冲释放后，发送 <strong>解除 PAUSE</strong> 或等待 <strong>超时</strong>  
+                        </div>  
+                    </div>  
+
+                    <div class="fc-message-flow">  
+                        <span class="fc-arrow">↓↓</span>  
+                    </div>  
+
+                    <div class="fc-entity sender">  
+                        <div class="fc-entity-name">📤 发送端</div>  
+                        <div class="fc-state">  
+                            收到 <strong>PAUSE 帧</strong><br>  
+                            <strong>立即停止</strong> 该优先级数据传输<br>  
+                            等待 <strong>PAUSE 超时</strong> 或 <strong>恢复信号</strong><br>  
+                            然后恢复发送  
+                        </div>  
+                    </div>  
+
+                    <div class="warning-box" style="margin-top: 1.5rem;">  
+                        <strong>特点：</strong>  
+                        <ul style="margin-top: 0.5rem;">  
+                            <li>XOFF/XON 开关型流控</li>  
+                            <li>反应快速，实现简单</li>  
+                            <li>无消息开销（静止时）</li>  
+                            <li>对时延敏感</li>  
+                        </ul>  
+                    </div>  
+                </div>  
+
+                <!-- CBFC 机制 -->  
+                <div class="flow-control-column cbfc">  
+                    <div class="fc-header cbfc">  
+                        🔵 CBFC - Credit-Based Flow Control  
+                    </div>  
+                    <div class="info-box">  
+                        <strong>标准：</strong>UE Specification 第 5.2 条款<br>  
+                        <strong>控制粒度：</strong>虚拟通道（VC）级别，最多 32 个 VC  
+                    </div>  
+
+                    <h3 style="color: var(--accent-cyan); margin-top: 1rem;">工作原理</h3>  
+                    <div class="fc-entity receiver">  
+                        <div class="fc-entity-name">📥 接收端</div>  
+                        <div class="fc-state">  
+                            维护 <strong>可用信用计数器</strong><br>  
+                            每收到一个包，<strong>消耗信用</strong><br>  
+                            当包被处理释放时，<br>  
+                            通过 <strong>CC_Update 消息</strong><br>  
+                            通知发送端已释放的信用  
+                        </div>  
+                    </div>  
+
+                    <div class="fc-message-flow">  
+                        <span class="fc-arrow">↕</span>  
+                    </div>  
+
+                    <div class="fc-entity sender">  
+                        <div class="fc-entity-name">📤 发送端</div>  
+                        <div class="fc-state">  
+                            维护 <strong>信用余额计数器</strong><br>  
+                            只有当 <strong>信用 > 0</strong> 时才能发送<br>  
+                            发送包时 <strong>消耗信用</strong><br>  
+                            收到 <strong>CC_Update</strong> 时 <strong>恢复信用</strong>  
+                        </div>  
+                    </div>  
+
+                    <div class="info-box" style="margin-top: 1.5rem;">  
+                        <strong>特点：</strong>  
+                        <ul style="margin-top: 0.5rem;">  
+                            <li>动态信用管理机制</li>  
+                            <li>精细化流量控制</li>  
+                            <li>容错能力强</li>  
+                            <li>需要定期反馈消息</li>  
+                        </ul>  
+                    </div>  
+                </div>  
+            </div>  
+        </section>  
+
+        <!-- 时序对比视图 -->  
+        <section class="section mb-3 view-section" id="sequence-view">  
+            <h2 class="section-title">⏱️ 时序对比</h2>  
+
+            <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 流控时序</h3>  
+            <div class="timeline-diagram">  
+                <div class="timeline-track">  
+                    <div class="timeline-label">发送端</div>  
+                    <div class="timeline-events" id="pfc-sender-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+                <div class="timeline-track">  
+                    <div class="timeline-label">接收端</div>  
+                    <div class="timeline-events" id="pfc-receiver-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+                <div class="timeline-track">  
+                    <div class="timeline-label">缓冲占用</div>  
+                    <div class="timeline-events" id="pfc-buffer-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-blue); margin: 2rem 0 1rem;">CBFC 流控时序</h3>  
+            <div class="timeline-diagram">  
+                <div class="timeline-track">  
+                    <div class="timeline-label">发送端</div>  
+                    <div class="timeline-events" id="cbfc-sender-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+                <div class="timeline-track">  
+                    <div class="timeline-label">接收端</div>  
+                    <div class="timeline-events" id="cbfc-receiver-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+                <div class="timeline-track">  
+                    <div class="timeline-label">信用值</div>  
+                    <div class="timeline-events" id="cbfc-credit-timeline">  
+                        <div class="timeline-line"></div>  
+                    </div>  
+                </div>  
+            </div>  
+
+            <!-- 缓冲区可视化 -->  
+            <h3 style="color: var(--accent-cyan); margin-top: 2rem;">接收缓冲区状态变化</h3>  
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">  
+                <div>  
+                    <h4 style="color: var(--accent-orange);">PFC 缓冲策略</h4>  
+                    <div class="buffer-viz">  
+                        <div class="buffer-name">缓冲区占用</div>  
+                        <div class="buffer-bar">  
+                            <div class="buffer-fill" id="pfc-buffer-fill" style="width: 30%;"></div>  
+                            <div class="buffer-threshold" style="left: 80%;"></div>  
+                        </div>  
+                        <div class="buffer-info">  
+                            <span>已用: <span id="pfc-used">30</span>%</span>  
+                            <span>阈值: 80%</span>  
+                        </div>  
+                    </div>  
+                    <div class="info-box">  
+                        <strong>阈值触发：</strong>当占用超过 80% 时发送 PAUSE  
+                    </div>  
+                </div>  
+                <div>  
+                    <h4 style="color: var(--accent-blue);">CBFC 信用策略</h4>  
+                    <div class="buffer-viz">  
+                        <div class="buffer-name">可用信用</div>  
+                        <div class="buffer-bar">  
+                            <div class="buffer-fill" id="cbfc-credit-fill" style="width: 65%; background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan));"></div>  
+                        </div>  
+                        <div class="buffer-info">  
+                            <span>可用: <span id="cbfc-credit">650</span>/1000 单元</span>  
+                            <span>已消耗: 350</span>  
+                        </div>  
+                    </div>  
+                    <div class="info-box">  
+                        <strong>动态分配：</strong>每收一包消耗，每释放一包恢复  
+                    </div>  
+                </div>  
+            </div>  
+        </section>  
+
+        <!-- 特性对比视图 -->  
+        <section class="section mb-3 view-section" id="comparison-view">  
+            <h2 class="section-title">🔀 特性对比表</h2>  
+
+            <table class="comparison-table">  
+                <thead>  
+                    <tr>  
+                        <th style="width: 25%;">特性维度</th>  
+                        <th style="width: 37.5%;">PFC (Priority Flow Control)</th>  
+                        <th style="width: 37.5%;">CBFC (Credit-Based Flow Control)</th>  
+                    </tr>  
+                </thead>  
+                <tbody>  
+                    <tr>  
+                        <td class="feature-name">📋 标准来源</td>  
+                        <td class="pfc-feature">IEEE 802.1Q-2022 第 36 条款</td>  
+                        <td class="cbfc-feature">UE Specification 第 5.2 条款</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">🎯 控制粒度</td>  
+                        <td class="pfc-feature">8 个优先级（CoS 0-7）</td>  
+                        <td class="cbfc-feature">最多 32 个虚拟通道（VC）</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">🔄 控制机制</td>  
+                        <td class="pfc-feature">开关型（XOFF/XON）</td>  
+                        <td class="cbfc-feature">信用制（Credit）</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">📨 反馈消息</td>  
+                        <td class="pfc-feature">PAUSE 帧（暂停/恢复）</td>  
+                        <td class="cbfc-feature">CC_Update 或 CF_Update 消息</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">⏱️ 反应时间</td>  
+                        <td class="pfc-feature">立即停止发送</td>  
+                        <td class="cbfc-feature">等待信用恢复后继续</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">📦 缓冲管理</td>  
+                        <td class="pfc-feature">共享缓冲池，阈值触发</td>  
+                        <td class="cbfc-feature">每 VC 独立信用限制</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">🛡️ 容错能力</td>  
+                        <td class="pfc-feature">缺乏消息丢失恢复</td>  
+                        <td class="cbfc-feature">环形计数器自动恢复</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">⚙️ 实现复杂度</td>  
+                        <td class="pfc-feature">简单，状态少</td>  
+                        <td class="cbfc-feature">复杂，需多计数器</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">📈 可扩展性</td>  
+                        <td class="pfc-feature">有限，8 个优先级</td>  
+                        <td class="cbfc-feature">高，32 个虚拟通道</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">🌐 适用场景</td>  
+                        <td class="pfc-feature">数据中心、企业网络</td>  
+                        <td class="cbfc-feature">HPC、AI 训练集群</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">⏸️ 链路利用率</td>  
+                        <td class="pfc-feature">暂停时链路空闲</td>  
+                        <td class="cbfc-feature">持续有效，减少空闲</td>  
+                    </tr>  
+                    <tr>  
+                        <td class="feature-name">🔗 时延敏感性</td>  
+                        <td class="pfc-feature">对链路延迟敏感</td>  
+                        <td class="cbfc-feature">对链路延迟不敏感</td>  
+                    </tr>  
+                </tbody>  
+            </table>  
+
+            <!-- 优缺点分析 -->  
+            <h3 style="color: var(--accent-cyan); margin-top: 2rem;">优势分析</h3>  
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">  
+                <div>  
+                    <h4 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 优势 ✓</h4>  
+                    <div class="module-box">  
+                        <div class="module-detail">  
+                            ✅ 实现简单，易于部署<br>  
+                            ✅ 无消息开销（静止时）<br>  
+                            ✅ 反应迅速，立即暂停<br>  
+                            ✅ 全局缓冲共享高效<br>  
+                            ✅ 业界广泛应用  
+                        </div>  
+                    </div>  
+                </div>  
+                <div>  
+                    <h4 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 优势 ✓</h4>  
+                    <div class="module-box">  
+                        <div class="module-detail">  
+                            ✅ 粒度细，32 个 VC<br>  
+                            ✅ 容错性强，消息丢失自恢复<br>  
+                            ✅ 对链路延迟不敏感<br>  
+                            ✅ 精细化调度和负载均衡<br>  
+                            ✅ 链路利用率更高  
+                        </div>  
+                    </div>  
+                </div>  
+            </div>  
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 1.5rem;">  
+                <div>  
+                    <h4 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 劣势 ✗</h4>
+					                    <div class="module-box">  
+                        <div class="module-detail">  
+                            ❌ 粒度粗，只有 8 个优先级<br>  
+                            ❌ 控制盲区，PAUSE 期间无反馈<br>  
+                            ❌ 对链路延迟敏感<br>  
+                            ❌ 全局暂停可能影响低优先级<br>  
+                            ❌ 难以应对高延迟网络  
+                        </div>  
+                    </div>  
+                </div>  
+                <div>  
+                    <h4 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 劣势 ✗</h4>  
+                    <div class="module-box">  
+                        <div class="module-detail">  
+                            ❌ 实现复杂，需多计数器<br>  
+                            ❌ 定期反馈消息开销<br>  
+                            ❌ 初始化握手过程复杂<br>  
+                            ❌ 计数器溢出处理困难<br>  
+                            ❌ 业界采用度较低  
+                        </div>  
+                    </div>  
+                </div>  
+            </div>  
+        </section>  
+
+        <!-- PFC 详细原理 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">🟠 PFC 详细原理</h2>  
+
+            <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC PAUSE 帧格式</h3>  
+            <div class="module-box">  
+                <div class="module-header">MAC Control 帧结构</div>  
+                <div class="module-detail" style="font-family: var(--font-mono); font-size: 0.85em;">  
+                    <strong>帧头：</strong><br>  
+                    └─ 目标 MAC: 01:80:C2:00:00:01 (标准 PAUSE multicast)<br>  
+                    └─ 源 MAC: 发送端 MAC 地址<br>  
+                    └─ EtherType: 0x8808 (MAC Control)<br><br>  
+                    
+                    <strong>帧体：</strong><br>  
+                    └─ Opcode: 0x0001 (PAUSE)<br>  
+                    └─ 参数字段 (2 字节):<br>  
+                    &nbsp;&nbsp;&nbsp;├─ 优先级位图 (PFC_en, 8 bit): 指示哪些优先级被暂停<br>  
+                    &nbsp;&nbsp;&nbsp;└─ 暂停时间 (pause_time, 16 bit): 时间单位 × 512 ns<br><br>  
+                    
+                    <strong>示例：</strong><br>  
+                    PFC_en = 0x01 (仅优先级 0 暂停)<br>  
+                    pause_time = 1000 (暂停 512 μs)  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-orange); margin-top: 2rem; margin-bottom: 1rem;">PFC 工作流程</h3>  
+            <div class="cbfc-steps">  
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">1️⃣ 监控缓冲区</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端持续监控优先级 i 的输入缓冲区深度。  
+                        当缓冲占用达到配置的 <strong>高阈值（High Threshold）</strong> 时触发。  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">2️⃣ 发送 PAUSE 帧</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端立即生成并发送 <strong>PFC PAUSE 帧</strong>，  
+                        设置 PFC_en 中对应优先级的位为 1，暂停时间通常设置为  
+                        <strong>可预期的最大恢复时间</strong>。  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">3️⃣ 发送端收到 PAUSE</div>  
+                    <div class="cbfc-step-desc">  
+                        发送端接收到 PAUSE 帧后，  
+                        对应优先级的流量 <strong>立即停止</strong>，  
+                        启动 PAUSE 超时计时器。  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">4️⃣ 缓冲恢复</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端处理缓冲中的数据，  
+                        当缓冲占用降到 <strong>低阈值（Low Threshold）</strong> 以下时，  
+                        恢复变为可能。  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">5️⃣ 发送恢复信号（可选）</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端可选择发送新的 PAUSE 帧，  
+                        设置 pause_time = 0（表示停止暂停）。  
+                        或者等待发送端的 PAUSE 超时自动恢复。  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-orange);">  
+                    <div class="cbfc-step-title">6️⃣ 发送端恢复发送</div>  
+                    <div class="cbfc-step-desc">  
+                        收到暂停恢复信号或 PAUSE 超时后，  
+                        发送端恢复该优先级的数据传输。  
+                    </div>  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-orange); margin-top: 2rem; margin-bottom: 1rem;">PFC 阈值和时间管理</h3>  
+            <div class="info-box">  
+                <strong>缓冲阈值设计：</strong>  
+                <ul style="margin-top: 0.5rem;">  
+                    <li><strong>High Threshold (高阈值)：</strong> 通常为缓冲容量的 75-90%</li>  
+                    <li><strong>Low Threshold (低阈值)：</strong> 通常为缓冲容量的 20-40%</li>  
+                    <li><strong>风险：</strong>如果高阈值设置过低，会频繁发送 PAUSE，降低吞吐量；过高则风险包丢失</li>  
+                </ul>  
+            </div>  
+
+            <div class="warning-box">  
+                <strong>PAUSE 超时设置：</strong>  
+                <ul style="margin-top: 0.5rem;">  
+                    <li>超时时间 = <strong>链路往返延迟 (RTT) × 2 + 最大报文传输时间</strong></li>  
+                    <li>必须足够长以允许发送端停止发送</li>  
+                    <li>设置过短会导致未充分利用链路；过长则恢复缓慢</li>  
+                    <li>典型值：以太网为 512 纳秒的时间单位，pause_time 常设为 65535（最大值）</li>  
+                </ul>  
+            </div>  
+        </section>  
+
+        <!-- CBFC 详细原理 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">🔵 CBFC 详细原理</h2>  
+
+            <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 消息格式</h3>  
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-bottom: 2rem;">  
+                <div>  
+                    <h4 style="color: var(--accent-blue);">CC_Update (MAC Control 帧)</h4>  
+                    <div class="module-box">  
+                        <div class="module-header">信用更新帧结构</div>  
+                        <div class="module-detail" style="font-family: var(--font-mono); font-size: 0.85em;">  
+                            <strong>帧头：</strong><br>  
+                            └─ 目标 MAC: 01:80:C2:00:00:01<br>  
+                            └─ EtherType: 0x8808<br><br>  
+                            
+                            <strong>帧体：</strong><br>  
+                            └─ Opcode: 0xFFFE (Organizationally Specific)<br>  
+                            └─ 集团 ID: 3 字节<br>  
+                            └─ 消息类型: 0x01 (CC_Update)<br>  
+                            └─ 16 个 VC 的信用:<br>  
+                            &nbsp;&nbsp;├─ VC[0]: 20 位信用计数<br>  
+                            &nbsp;&nbsp;├─ VC[1]: 20 位信用计数<br>  
+                            &nbsp;&nbsp;├─ ... (最多 16 个)<br>  
+                            &nbsp;&nbsp;└─ VC[15]: 20 位信用计数<br><br>  
+                            
+                            <strong>特点：</strong><br>  
+                            • 周期性发送（通常 100-500 μs）<br>  
+                            • 消息开销相对较大<br>  
+                            • 支持多个 VC 批量更新  
+                        </div>  
+                    </div>  
+                </div>  
+
+                <div>  
+                    <h4 style="color: var(--accent-blue);">CF_Update (CtlOS 消息)</h4>  
+                    <div class="module-box">  
+                        <div class="module-header">快速信用反馈</div>  
+                        <div class="module-detail" style="font-family: var(--font-mono); font-size: 0.85em;">  
+                            <strong>64B/66B 编码格式：</strong><br>  
+                            └─ Sync Header: 0x10 (Control)<br>  
+                            └─ Block Type: 0x5C (CtlOS)<br>  
+                            └─ Message Type: 0x10 (CF_Update)<br><br>  
+                            
+                            <strong>消息体：</strong><br>  
+                            └─ VC1 信用: 20 位<br>  
+                            └─ VC2 信用: 20 位<br><br>  
+                            
+                            <strong>特点：</strong><br>  
+                            • 随数据包插入，0 开销<br>  
+                            • 实时性强<br>  
+                            • 仅支持 2 个关键 VC<br>  
+                            • 用于快速通道优化  
+                        </div>  
+                    </div>  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 工作流程</h3>  
+            <div class="cbfc-steps">  
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">1️⃣ LLDP 初始化</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端通过 LLDP TLV 通知发送端：<br>  
+                        • 每个虚拟通道的总信用数（R_TotalCredits）<br>  
+                        • 信用单元大小（R_CellSize，通常 64 字节）<br>  
+                        • 数据包开销（R_PacketOverhead）  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">2️⃣ 发送端配置</div>  
+                    <div class="cbfc-step-desc">  
+                        发送端根据接收端参数计算：<br>  
+                        • 初始信用计数器值 = R_TotalCredits × R_CellSize<br>  
+                        • 每个数据包的单元消耗 = ⌈(包大小 + R_PacketOverhead) / R_CellSize⌉  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">3️⃣ 发送数据</div>  
+                    <div class="cbfc-step-desc">  
+                        发送端只有在 <strong>S_VC_CC[i] ≥ 所需单元数</strong> 时才能发送：<br>  
+                        • 检查该 VC 的当前信用 S_VC_CC[i]<br>  
+                        • 计算所需单元数<br>  
+                        • 发送包后立即扣除信用<br>  
+                        • 若信用不足则暂停该 VC  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">4️⃣ 接收端消耗信用</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端每收到一个数据包：<br>  
+                        • 减少 R_VC_CC[i] （本地可用信用）<br>  
+                        • 数据包进入接收缓冲<br>  
+                        • 继续监控剩余信用  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">5️⃣ 缓冲处理</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端处理缓冲中的数据包：<br>  
+                        • 数据包交给上层协议栈<br>  
+                        • 释放接收缓冲空间<br>  
+                        • 增加 R_VC_CC[i] （恢复信用）<br>  
+                        • 准备发送信用更新  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">6️⃣ 发送信用更新</div>  
+                    <div class="cbfc-step-desc">  
+                        接收端定期或立即发送更新消息：<br>  
+                        • <strong>CC_Update：</strong>周期性发送（~200 μs），包含 16 个 VC<br>  
+                        • <strong>CF_Update：</strong>随数据包发送，仅 2 个关键 VC  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">7️⃣ 发送端收到更新</div>  
+                    <div class="cbfc-step-desc">  
+                        发送端接收信用更新消息：<br>  
+                        • 解析新的信用值<br>  
+                        • 更新 S_VC_CC[i] = 接收端报告的 R_VC_CC[i]<br>  
+                        • 如果 S_VC_CC[i] > 0，恢复数据发送<br>  
+                        • 继续数据传输流程  
+                    </div>  
+                </div>  
+
+                <div class="cbfc-step" style="border-left-color: var(--accent-blue);">  
+                    <div class="cbfc-step-title">8️⃣ 动态平衡</div>  
+                    <div class="cbfc-step-desc">  
+                        系统进入稳态循环：<br>  
+                        • 发送速率 ≈ 接收/处理速率<br>  
+                        • 信用消耗与恢复保持平衡<br>  
+                        • 接收缓冲稳定在某个合理水平<br>  
+                        • 无丢包，无浪费  
+                    </div>  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-blue); margin-top: 2rem; margin-bottom: 1rem;">信用计算示例</h3>  
+            <div class="module-box">  
+                <div class="module-header">数值计算示例</div>  
+                <div class="module-detail">  
+                    <strong>配置参数：</strong><br>  
+                    • R_TotalCredits = 1000 个信用单元<br>  
+                    • R_CellSize = 64 字节<br>  
+                    • R_PacketOverhead = 0 字节<br>  
+                    • 初始 R_VC_CC[0] = 1000 × 64 = 64,000 字节<br><br>  
+
+                    <strong>场景 1：发送 1500 字节的包</strong><br>  
+                    • 所需单元数 = ⌈(1500 + 0) / 64⌉ = ⌈23.44⌉ = 24 单元<br>  
+                    • 发送端检查：S_VC_CC[0] ≥ 24？ ✓<br>  
+                    • 发送包后：S_VC_CC[0] -= 24 → 剩余 976 单元<br>  
+                    • 接收端：R_VC_CC[0] -= 24 → 剩余 976 单元<br><br>  
+
+                    <strong>场景 2：接收端处理了 10 个包，每个 1500 字节</strong><br>  
+                    • 总处理字节数 = 10 × 1500 = 15,000 字节<br>  
+                    • 释放单元数 = 15,000 / 64 = 234.375 → 235 单元（四舍五入）<br>  
+                    • 或精确：⌈15000 / 64⌉ = 235 单元<br>  
+                    • 恢复后：R_VC_CC[0] += 235 → 现为 1000 - 24 + 235 = 1211 单元？<br>  
+                    • ⚠️ 需要环形计数器管理溢出！  
+                </div>  
+            </div>  
+
+            <h3 style="color: var(--accent-blue); margin-top: 2rem; margin-bottom: 1rem;">环形计数器和溢出处理</h3>  
+            <div class="danger-box">  
+                <strong>计数器宽度：20 位（0 到 1,048,575）</strong><br><br>  
+                
+                <strong>为什么需要环形计数器？</strong><br>  
+                • 防止计数器永远增长<br>  
+                • 支持无限长时间操作<br>  
+                • 节省存储空间<br><br>  
+
+                <strong>溢出处理规则：</strong><br>  
+                • 所有计数器操作都是模 2^20<br>  
+                • (a + b) mod 2^20 和 (a - b) mod 2^20 自动处理<br>  
+                • 发送端需要跟踪"时代" (epoch)，以理解接收端的计数<br><br>  
+
+                <strong>示例：</strong><br>  
+                • 当前 S_VC_CC[0] = 1,048,500（接近溢出）<br>  
+                • 接收端报告 R_VC_CC[0] = 100（已环绕）<br>  
+                • 发送端需要理解这是一个新纪元，不能简单相减  
+            </div>  
+        </section>  
+
+        <!-- 流控性能对比 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">📊 性能指标对比</h2>  
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">  
+                <div>  
+                    <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 性能指标</h3>  
+                    <div class="module-box">  
+                        <div class="module-header">反应时间</div>  
+                        <div class="module-detail">  
+                            <strong>从缓冲满到流量停止：</strong><br>  
+                            ~1-2 μs（仅包括帧传输时间）<br><br>  
+                            
+                            <strong>从流量恢复请求到恢复发送：</strong><br>  
+                            ~1-2 μs（同上）<br><br>  
+                            
+                            <strong>关键因素：</strong><br>  
+                            • MAC 处理延迟<br>  
+                            • PHY 延迟<br>  
+                            • 链路传播延迟  
+                        </div>  
+                    </div>  
+
+                    <div class="module-box" style="margin-top: 1rem;">  
+                        <div class="module-header">消息开销</div>  
+                        <div class="module-detail">  
+                            <strong>PAUSE 帧大小：</strong> 60 字节（最小）<br>  
+                            <strong>发送频率：</strong> 仅在拥塞时<br>  
+                            <strong>静止状态开销：</strong> 0（无消息）<br><br>  
+                            
+                            <strong>典型场景：</strong><br>  
+                            • 拥塞 → 每 100 μs 发送 1 个 PAUSE<br>  
+                            • 带宽占用 = 60 B × 10 kHz = 4.8 Mbps（在 100 Gbps 上仅 0.005%）  
+                        </div>  
+                    </div>  
+
+                    <div class="module-box" style="margin-top: 1rem;">  
+                        <div class="module-header">缓冲利用率</div>  
+                        <div class="module-detail">  
+                            <strong>平均占用：</strong> 50-70%<br>  
+                            <strong>峰值占用：</strong> 85-95%<br>  
+                            <strong>浪费（Deadband）：</strong> 10-25%<br><br>  
+                            
+                            <strong>原因：</strong><br>  
+                            • 高阈值与低阈值间的不活跃区<br>  
+                            • PAUSE 已发送但还未生效期间<br>  
+                            • 风险规避的缓冲预留  
+                        </div>  
+                    </div>  
+                </div>  
+
+                <div>  
+                    <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 性能指标</h3>  
+                    <div class="module-box">  
+                        <div class="module-header">反应时间</div>  
+                        <div class="module-detail">  
+                            <strong>从缓冲满到流量停止：</strong><br>  
+                            ~信用到 0 所需的时间<br><br>  
+                            
+                            <strong>从缓冲释放到流量恢复：</strong><br>  
+                            ~CC_Update 或 CF_Update 发送延迟<br>  
+                            （CC_Update: ~100-500 μs）<br><br>  
+                            
+                            <strong>特性：</strong><br>  
+                            • 反应不如 PFC 迅速<br>  
+                            • 但对链路延迟鲁棒<br>  
+                            • 可预测的反馈周期  
+                        </div>  
+                    </div>  
+
+                    <div class="module-box" style="margin-top: 1rem;">  
+                        <div class="module-header">消息开销</div>  
+                        <div class="module-detail">  
+                            <strong>CC_Update 帧大小：</strong> ~100 字节<br>  
+                            <strong>CF_Update 大小：</strong> 0（随数据发送）<br>  
+                            <strong>发送频率：</strong> 定期（~200 μs）<br><br>  
+                            
+                            <strong>典型场景：</strong><br>  
+                            • CC_Update: 100 B × 5 kHz = 4 Mbps<br>  
+                            • CF_Update: 0（嵌入模式）<br>  
+                            • 总开销：~0.004% 的 100 Gbps  
+                        </div>  
+                    </div>  
+
+                    <div class="module-box" style="margin-top: 1rem;">  
+                        <div class="module-header">缓冲利用率</div>  
+                        <div class="module-detail">  
+                            <strong>平均占用：</strong> 60-80%<br>  
+                            <strong>峰值占用：</strong> 90-98%<br>  
+                            <strong>浪费（Deadband）：</strong> 2-10%<br><br>  
+                            
+                            <strong>优势：</strong><br>  
+                            • 动态信用管理，高效利用<br>  
+                            • 不需要硬阈值<br>  
+                            • 多 VC 独立调度  
+                        </div>  
+                    </div>  
+                </div>  
+            </div>  
+
+            <!-- 链路利用率对比图表 -->  
+            <h3 style="color: var(--accent-cyan); margin-top: 2rem; margin-bottom: 1rem;">💾 链路利用率对比</h3>  
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">  
+                <div>  
+                    <div class="buffer-viz">  
+                        <div class="buffer-name">PFC 链路利用率</div>  
+                        <div class="buffer-bar">  
+                            <div class="buffer-fill" style="width: 75%; background: var(--accent-orange);">75%</div>  
+                        </div>  
+                        <div class="buffer-info">  
+                            <span>有效数据：75%</span>  
+                            <span>PAUSE 控制：1%</span>  
+                            <span>空闲期：24%</span>  
+                        </div>  
+                    </div>  
+                    <p style="font-size: 0.85em; color: var(--text-secondary); margin-top: 0.5rem;">  
+                        暂停期间链路空闲，降低利用率  
+                    </p>  
+                </div>  
+
+                <div>  
+                    <div class="buffer-viz">  
+                        <div class="buffer-name">CBFC 链路利用率</div>  
+                        <div class="buffer-bar">  
+                            <div class="buffer-fill" style="width: 92%; background: var(--accent-blue);">92%</div>  
+                        </div>  
+                        <div class="buffer-info">  
+                            <span>有效数据：92%</span>  
+                            <span>CC_Update：0.1%</span>  
+                            <span>空闲期：7.9%</span>  
+                        </div>  
+                    </div>  
+                    <p style="font-size: 0.85em; color: var(--text-secondary); margin-top: 0.5rem;">  
+                        动态流控，持续发送，利用率更高  
+                    </p>  
+                </div>  
+            </div>  
+        </section>  
+
+        <!-- 故障场景对比 -->  
+        <section class="section mb-3">  
+            <h2 class="section-title">⚠️ 故障场景对比</h2>  
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">  
+                <div>  
+                    <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 故障场景</h3>  
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">  
+                        <strong>场景 1：PAUSE 帧丢失</strong><br>  
+                        接收端发送的 PAUSE 帧在网络中丢失。  
+                        <br><em>后果：</em>发送端无法停止，缓冲可能溢出导致丢包。  
+                        <br><em>恢复：</em>依赖重传（概率极低）或超时。  
+                    </div>  
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">  
+                        <strong>场景 2：计时器失效</strong><br>  
+                        发送端的 PAUSE 超时计时器出故障。  
+                        <br><em>后果：</em>流量无法恢复，链路死锁。  
+                        <br><em>恢复：</em>需要手动干预或硬件重启。  
+                    </div>  
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 3：长延迟网络</strong><br>
+                        在高延迟网络中（如跨地域），PAUSE 超时设置困难。
+                        <br><em>后果：</em>要么频繁误触发 PAUSE，要么 PAUSE 不生效。
+                        <br><em>恢复：</em>依赖链路优化或切换到 CBFC。
+                    </div>
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 4：优先级间干扰</strong><br>
+                        某个优先级拥塞，影响其他优先级的流量。
+                        <br><em>后果：</em>低优先级被全局暂停，利用率低。
+                        <br><em>恢复：</em>通过优先级隔离或升级到更多优先级数。
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 故障场景</h3>
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 1：CC_Update 消息丢失</strong><br>
+                        接收端发送的 CC_Update 帧完全丢失。
+                        <br><em>后果：</em>发送端信用不更新，可能耗尽。
+                        <br><em>恢复：</em>环形计数器自动检测，下一个消息恢复同步。
+                    </div>
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 2：计数器溢出错误</strong><br>
+                        20 位计数器模 2^20 运算出错。
+                        <br><em>后果：</em>发送端信用计算错误，可能流控失效。
+                        <br><em>恢复：</em>需要仔细的模运算实现，通常通过硬件支持。
+                    </div>
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 3：VC 初始化超时</strong><br>
+                        LLDP 协商过程中，某个 VC 的握手没有完成。
+                        <br><em>后果：</em>该 VC 无法激活，流量受阻。
+                        <br><em>恢复：</em>重新启动链路或手动干预。
+                    </div>
+
+                    <div class="danger-box" style="margin-bottom: 1rem;">
+                        <strong>场景 4：信用分配不均</strong><br>
+                        接收端错误地分配 VC 的总信用，导致某些 VC 长期挨饿。
+                        <br><em>后果：</em>某个 VC 吞吐量低，影响应用性能。
+                        <br><em>恢复：</em>调整 VC_CreditLimit，重新协商。
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 应用场景 -->
+        <section class="section mb-3">
+            <h2 class="section-title">🏢 应用场景分析</h2>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div>
+                    <h3 style="color: var(--accent-orange); margin-bottom: 1rem;">PFC 适用场景 ✓</h3>
+                    <div class="warning-box">
+                        <strong>数据中心网络</strong><br>
+                        • 交换机和 NIC 间的流控<br>
+                        • 以太网架构相对简单<br>
+                        • 链路延迟可预测
+                    </div>
+
+                    <div class="warning-box">
+                        <strong>企业网络</strong><br>
+                        • 广泛支持，兼容性好<br>
+                        • 管理员熟悉度高<br>
+                        • 故障诊断工具完善
+                    </div>
+
+                    <div class="warning-box">
+                        <strong>传统存储网络</strong><br>
+                        • iSCSI / Fibre Channel over Ethernet<br>
+                        • 可靠传输需求强<br>
+                        • 链路距离短
+                    </div>
+
+                    <div class="info-box" style="margin-top: 1rem;">
+                        <strong>性能指标：</strong><br>
+                        丢包率：< 10^-15<br>
+                        延迟增加：< 10 μs<br>
+                        吞吐量影响：≈ 5-15%
+                    </div>
+                </div>
+
+                <div>
+                    <h3 style="color: var(--accent-blue); margin-bottom: 1rem;">CBFC 适用场景 ✓</h3>
+                    <div class="info-box">
+                        <strong>HPC 集群网络</strong><br>
+                        • AI 训练、科学计算<br>
+                        • 对延迟极其敏感<br>
+                        • 需要多虚拟通道隔离
+                    </div>
+
+                    <div class="info-box">
+                        <strong>超大规模数据中心</strong><br>
+                        • 云计算基础设施<br>
+                        • 需要细粒度流控<br>
+                        • 链路距离可能较远
+                    </div>
+
+                    <div class="info-box">
+                        <strong>加速器网络（GPU/TPU）</strong><br>
+                        • 分布式深度学习<br>
+                        • 低延迟要求<br>
+                        • 多路复用场景
+                    </div>
+
+                    <div class="info-box" style="margin-top: 1rem;">
+                        <strong>性能指标：</strong><br>
+                        丢包率：< 10^-17<br>
+                        延迟增加：< 1 μs<br>
+                        吞吐量影响：≈ 1-5%
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="color: var(--accent-cyan); margin-top: 2rem; margin-bottom: 1rem;">🎯 选择矩阵</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th style="width: 25%;">选择条件</th>
+                        <th style="width: 37.5%;">倾向 PFC</th>
+                        <th style="width: 37.5%;">倾向 CBFC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="feature-name">系统复杂度</td>
+                        <td class="pfc-feature">低 ✓</td>
+                        <td class="cbfc-feature">高</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">成本考虑</td>
+                        <td class="pfc-feature">低成本 ✓</td>
+                        <td class="cbfc-feature">高成本</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">链路延迟</td>
+                        <td class="pfc-feature">短链接 ✓</td>
+                        <td class="cbfc-feature">长链接 ✓</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">VC 数量需求</td>
+                        <td class="pfc-feature">8 个足够 ✓</td>
+                        <td class="cbfc-feature">需要 > 16 ✓</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">实时性要求</td>
+                        <td class="pfc-feature">中等 ✓</td>
+                        <td class="cbfc-feature">极高 ✓</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">容错需求</td>
+                        <td class="pfc-feature">基础</td>
+                        <td class="cbfc-feature">强 ✓</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">业界支持</td>
+                        <td class="pfc-feature">广泛 ✓</td>
+                        <td class="cbfc-feature">新兴</td>
+                    </tr>
+                    <tr>
+                        <td class="feature-name">易用性</td>
+                        <td class="pfc-feature">开箱即用 ✓</td>
+                        <td class="cbfc-feature">需配置</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+
+        <!-- 状态监控 -->
+        <section class="section mb-3">
+            <h2 class="section-title">📊 当前动画状态</h2>
+            <div class="stat-grid">
+                <div class="stat-item">
+                    <div class="stat-label">当前步骤</div>
+                    <div class="stat-value" id="fc-current-step-num">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">PFC 缓冲占用</div>
+                    <div class="stat-value" id="fc-pfc-buffer-pct">30%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">CBFC 信用可用</div>
+                    <div class="stat-value" id="fc-cbfc-credit-pct">65%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">动画速度</div>
+                    <div class="stat-value" id="fc-speed-display">1.0x</div>
+                </div>
+            </div>
+        </section>
+
     </div>
 
-    <!-- ========================== TAB 1: 概览对比 ========================== -->
-    <div class="tab-content active" id="tab-overview">
-
-        <div class="highlight-row">
-            <div style="text-align:center;">
-                <span class="feature-tag tag-cbfc" style="font-size:1.1em; padding:6px 18px;">CBFC</span>
-                <p style="font-size:0.75em; color:var(--text-muted); margin-top:4px;">Credit-Based Flow Control</p>
-            </div>
-            <div class="vs-badge">VS</div>
-            <div style="text-align:center;">
-                <span class="feature-tag tag-bfc" style="font-size:1.1em; padding:6px 18px;">BFC</span>
-                <p style="font-size:0.75em; color:var(--text-muted); margin-top:4px;">Basic Flow Control (PFC/PAUSE)</p>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>⚡ 核心差异一览</h2>
-
-            <div class="compare-grid">
-                <div class="compare-box cbfc">
-                    <div class="box-title">
-                        🎯 CBFC <span class="box-badge">UE Spec §5.2</span>
-                    </div>
-                    <ul>
-                        <li><strong>信用驱动：</strong>发送方仅在拥有足够信用（credits）时才允许发送数据包</li>
-                        <li><strong>精细粒度：</strong>支持多达 32 个虚拟通道（VCs），每个 VC 独立控制</li>
-                        <li><strong>双计数器机制：</strong>CC（Credit Consumed）和 CF（Credit Freed）循环计数器实现可靠追踪</li>
-                        <li><strong>两种消息类型：</strong>CF_Update（CtlOS 8B，高频率）和 CC_Update（Packet 64B，低频率）</li>
-                        <li><strong>不敏感于线缆长度：</strong>线缆延迟估算错误仅导致链路利用率降低，不会丢包</li>
-                        <li><strong>灵活缓冲分配：</strong>低吞吐量 VC 可分配更少信用，节省缓冲空间</li>
-                        <li><strong>与 LLR 协同：</strong>可与链路级重传（LLR）配合确保零丢包</li>
-                    </ul>
-                </div>
-                <div class="compare-box bfc">
-                    <div class="box-title">
-                        🛑 BFC (PFC/PAUSE) <span class="box-badge">IEEE 802.1Q/802.3</span>
-                    </div>
-                    <ul>
-                        <li><strong>阈值驱动：</strong>当接收方缓冲区深度超过阈值时发送 XOFF 暂停信号</li>
-                        <li><strong>优先级级别：</strong>PFC 基于 8 个优先级类（Traffic Class），PAUSE 为全端口暂停</li>
-                        <li><strong>XOFF/XON 机制：</strong>简单的暂停/恢复二状态流控</li>
-                        <li><strong>单一消息类型：</strong>PFC 帧 (EtherType 0x8808) 携带各优先级的暂停时间</li>
-                        <li><strong>对延迟敏感：</strong>线缆延迟低估可能导致缓冲区溢出和丢包</li>
-                        <li><strong>缓冲共享优势：</strong>可更高效地在端口间共享突发吸收缓冲</li>
-                        <li><strong>零消息开销：</strong>无流控事件时可完全利用链路带宽</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>📊 关键参数对比</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>特性维度</th>
-                            <th style="color:var(--accent-cyan)">CBFC（信用流控）</th>
-                            <th style="color:var(--accent-orange)">BFC（PFC/PAUSE）</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>规范来源</td>
-                            <td>Ultra Ethernet Spec v1.0 §5.2</td>
-                            <td>IEEE 802.1Q-2022 Clause 36 / IEEE 802.3 Annex 31B</td>
-                        </tr>
-                        <tr>
-                            <td>流控粒度</td>
-                            <td>Per-VC（最多 32 个虚拟通道）</td>
-                            <td>PFC: Per-Priority（8 优先级）/ PAUSE: 全端口</td>
-                        </tr>
-                        <tr>
-                            <td>控制方式</td>
-                            <td>信用制 — 预先授权发送量</td>
-                            <td>阈值制 — 超阈值后反压暂停</td>
-                        </tr>
-                        <tr>
-                            <td>消息格式</td>
-                            <td>CF_Update: CtlOS (8B)；CC_Update: Packet (64B)</td>
-                            <td>PFC: MAC Control Frame (64B)；PAUSE: MAC Control Frame</td>
-                        </tr>
-                        <tr>
-                            <td>发送方感知</td>
-                            <td>✅ 发送方知道每个 VC 的信用使用情况</td>
-                            <td>❌ 发送方仅知道是否被暂停</td>
-                        </tr>
-                        <tr>
-                            <td>线缆敏感性</td>
-                            <td>低 — 延迟估算错误仅降低利用率</td>
-                            <td>高 — 延迟低估可能导致缓冲溢出丢包</td>
-                        </tr>
-                        <tr>
-                            <td>实现复杂度</td>
-                            <td>高 — 需要循环计数器、信用管理、LLDP TLV 协商</td>
-                            <td>低 — XOFF/XON 逻辑简单</td>
-                        </tr>
-                        <tr>
-                            <td>带宽开销</td>
-                            <td>CF_Update < 0.5% BW; CC_Update < 0.01% BW</td>
-                            <td>无流控事件时零开销</td>
-                        </tr>
-                        <tr>
-                            <td>无损保证</td>
-                            <td>✅ 信用不足时不发送，天然无损</td>
-                            <td>⚠️ 依赖阈值设置正确和响应及时</td>
-                        </tr>
-                        <tr>
-                            <td>缓冲区利用率</td>
-                            <td>可精细分配，低吞吐 VC 使用更少缓冲</td>
-                            <td>更好的端口间缓冲共享能力</td>
-                        </tr>
-                        <tr>
-                            <td>死锁防护</td>
-                            <td>每 VC 前向进展保证</td>
-                            <td>需要外部机制（如优先级规划）</td>
-                        </tr>
-                        <tr>
-                            <td>调度支持</td>
-                            <td>✅ 可利用信用信息进行调度、负载均衡、自适应路由</td>
-                            <td>有限</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>🔄 工作原理对比示意</h2>
-            <div class="compare-grid">
-                <div class="compare-box cbfc">
-                    <div class="box-title">CBFC — 信用驱动流程</div>
-                    <div style="font-size:0.88em; line-height:2;">
-                        <p><code>1.</code> 初始化：Receiver 通过 LLDP 告知 Sender 可用信用 (TotalCredits)</p>
-                        <p><code>2.</code> 发送：Sender 检查 VC 信用 → 有信用 → 发送数据包 → CC++</p>
-                        <p><code>3.</code> 接收：Receiver 缓冲数据 → 处理后释放缓冲 → CF++</p>
-                        <p><code>4.</code> 归还：Receiver 发送 CF_Update (CtlOS) → Sender 更新 CF 计数</p>
-                        <p><code>5.</code> 同步：Sender 周期性发送 CC_Update → Receiver 核对恢复泄漏信用</p>
-                        <p><code>6.</code> 无信用 → Sender 暂停该 VC 发送，其他 VC 不受影响</p>
-                    </div>
-                </div>
-                <div class="compare-box bfc">
-                    <div class="box-title">BFC (PFC) — 阈值驱动流程</div>
-                    <div style="font-size:0.88em; line-height:2;">
-                        <p><code>1.</code> 正常状态：Sender 自由发送数据</p>
-                        <p><code>2.</code> 拥塞发生：Receiver 缓冲区队列深度超过阈值</p>
-                        <p><code>3.</code> 反压：Receiver 发送 PFC XOFF 帧 (含暂停时间量子)</p>
-                        <p><code>4.</code> 暂停：Sender 暂停对应优先级的所有流量</p>
-                        <p><code>5.</code> 恢复：暂停时间到期 或 Receiver 发送 XON 帧</p>
-                        <p><code>6.</code> 风险：如果 Sender 响应不及时 → 缓冲溢出 → 丢包</p>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <!-- 页脚 -->
+    <div class="page-footer">
+        <p>PFC vs CBFC 流控机制对比动画 | 基于 IEEE 802.1Q-2022 和 UE Specification v1.0</p>
+        <p>Copyright © 2025 Ultra Ethernet Consortium™. All rights reserved.</p>
     </div>
 
-    <!-- ========================== TAB 2: CBFC 动画 ========================== -->
-    <div class="tab-content" id="tab-anim-cbfc">
-        <div class="section-card">
-            <h2>🎬 CBFC 信用流控交互动画</h2>
-            <p style="color:var(--text-secondary); margin-bottom:var(--spacing-md);">
-                展示 Sender 和 Receiver 之间基于信用的数据传输过程，包含 CC/CF 计数器更新、VC 信用管理和消息交互。
-            </p>
+    <!-- 引入共用脚本 -->
+    <script src="common.js"></script>
 
-            <div class="ctrl-panel">
-                <button class="btn btn-primary" id="cbfc-play-btn" onclick="cbfcAnim.toggle()">▶ 播放</button>
-                <button class="btn btn-outline" onclick="cbfcAnim.step()">⏭ 单步</button>
-                <button class="btn btn-outline" onclick="cbfcAnim.reset()">↺ 重置</button>
-                <label style="font-size:0.85em; color:var(--text-secondary);">
-                    速度: <input type="range" min="1" max="5" value="2" style="width:100px; display:inline-block;"
-                                onchange="cbfcAnim.setSpeed(parseFloat(this.value))">
-                </label>
-            </div>
+    <!-- PFC vs CBFC 对比动画脚本 -->
+    <script>
+        (function() {
+            'use strict';
 
-            <!-- Stats -->
-            <div class="stat-grid" style="margin-bottom:var(--spacing-lg);">
-                <div class="stat-item">
-                    <div class="stat-label">Sender CC[0]</div>
-                    <div class="stat-value" id="cbfc-s-cc">0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Sender CF[0]</div>
-                    <div class="stat-value" id="cbfc-s-cf" style="color:var(--accent-green)">0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Available Credits</div>
-                    <div class="stat-value" id="cbfc-avail" style="color:var(--accent-purple)">16</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">CreditLimit</div>
-                    <div class="stat-value" id="cbfc-cl" style="color:var(--accent-yellow)">16</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Receiver CC[0]</div>
-                    <div class="stat-value" id="cbfc-r-cc" style="color:var(--accent-blue)">0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Receiver CF[0]</div>
-                    <div class="stat-value" id="cbfc-r-cf" style="color:var(--accent-orange)">0</div>
-                </div>
-            </div>
+            // ==================== 动画配置 ====================
+            const COMPARISON_STEPS = [
+                // PFC: 接收缓冲上升
+                {
+                    name: 'PFC: 缓冲上升',
+                    pfc: { sender: '发送数据', receiver: '缓冲累积', action: 'buffer-up' },
+                    cbfc: { sender: '发送数据', receiver: '消耗信用', action: 'credit-down' },
+                    metrics: { pfcBuf: 45, cbfcCredit: 60 }
+                },
+                // PFC: 缓冲达到阈值
+                {
+                    name: 'PFC: 触发 PAUSE',
+                    pfc: { sender: '等待', receiver: '发送 PAUSE', action: 'pause-send' },
+                    cbfc: { sender: '继续发送', receiver: '更新信用', action: 'credit-update' },
+                    metrics: { pfcBuf: 82, cbfcCredit: 55 }
+                },
+                // PFC: 发送端收到 PAUSE
+                {
+                    name: 'PFC: 发送端停止',
+                    pfc: { sender: '立即停止', receiver: '缓冲释放中', action: 'sender-pause' },
+                    cbfc: { sender: '根据信用发送', receiver: '缓冲释放中', action: 'credit-flow' },
+                    metrics: { pfcBuf: 60, cbfcCredit: 70 }
+                },
+                // PFC: PAUSE 超时或恢复
+                {
+                    name: 'PFC: 恢复发送',
+                    pfc: { sender: '恢复发送', receiver: '缓冲释放', action: 'pause-clear' },
+                    cbfc: { sender: '持续发送', receiver: '持续反馈', action: 'credit-steady' },
+                    metrics: { pfcBuf: 35, cbfcCredit: 75 }
+                },
+                // CBFC: 稳态运行
+                {
+                    name: 'CBFC: 动态平衡',
+                    pfc: { sender: '可能抖动', receiver: '缓冲波动', action: 'pfc-flap' },
+                    cbfc: { sender: '平稳发送', receiver: '平稳反馈', action: 'cbfc-steady' },
+                    metrics: { pfcBuf: 50, cbfcCredit: 68 }
+                }
+            ];
 
-            <!-- Animation SVG -->
-            <div class="anim-canvas" id="cbfc-canvas">
-                <svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Sender -->
-                    <rect x="30" y="120" width="180" height="160" rx="12" fill="rgba(100,255,218,0.08)" stroke="#64ffda" stroke-width="2"/>
-                    <text x="120" y="148" text-anchor="middle" class="device-label" fill="#64ffda">SENDER</text>
-                    <text x="50" y="172" class="counter-label" fill="#8892b0">VC[0] Queue:</text>
-                    <rect x="50" y="178" width="140" height="14" rx="3" fill="rgba(0,0,0,0.3)" stroke="rgba(100,255,218,0.2)" stroke-width="1"/>
-                    <rect x="50" y="178" width="0" height="14" rx="3" fill="#4fc3f7" id="cbfc-sender-q"/>
-                    <text x="50" y="210" class="counter-label" fill="#8892b0">S_CC[0]: <tspan id="cbfc-svg-scc" fill="#64ffda" font-weight="700">0</tspan></text>
-                    <text x="50" y="228" class="counter-label" fill="#8892b0">S_CF[0]: <tspan id="cbfc-svg-scf" fill="#69f0ae" font-weight="700">0</tspan></text>
-                    <text x="50" y="248" class="counter-label" fill="#8892b0">Avail:   <tspan id="cbfc-svg-avail" fill="#bb86fc" font-weight="700">16</tspan></text>
-                    <text x="50" y="268" class="counter-label" fill="#8892b0">Credit Limit: <tspan fill="#ffd740" font-weight="700">16</tspan></text>
+            let currentStep = -1;
+            let animController = null;
+            let viewMode = 'mechanism';
+            let speedMultiplier = 1;
 
-                    <!-- Receiver -->
-                    <rect x="590" y="120" width="180" height="160" rx="12" fill="rgba(100,255,218,0.08)" stroke="#64ffda" stroke-width="2"/>
-                    <text x="680" y="148" text-anchor="middle" class="device-label" fill="#64ffda">RECEIVER</text>
-                    <text x="610" y="172" class="counter-label" fill="#8892b0">Input Buffer:</text>
-                    <g id="cbfc-rx-buffer">
-                        <!-- Buffer cells drawn by JS -->
-                    </g>
-                    <text x="610" y="228" class="counter-label" fill="#8892b0">R_CC[0]: <tspan id="cbfc-svg-rcc" fill="#4fc3f7" font-weight="700">0</tspan></text>
-                    <text x="610" y="248" class="counter-label" fill="#8892b0">R_CF[0]: <tspan id="cbfc-svg-rcf" fill="#ffab40" font-weight="700">0</tspan></text>
-
-                    <!-- Link -->
-                    <line x1="210" y1="185" x2="590" y2="185" stroke="rgba(100,255,218,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
-                    <line x1="210" y1="215" x2="590" y2="215" stroke="rgba(255,171,64,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
-                    <text x="400" y="178" text-anchor="middle" class="msg-label" fill="#8892b0">→ Data Packets + CC_Update →</text>
-                    <text x="400" y="230" text-anchor="middle" class="msg-label" fill="#8892b0">← CF_Update (CtlOS 8B) ←</text>
-
-                    <!-- Animated packets group -->
-                    <g id="cbfc-packets"></g>
-                </svg>
-            </div>
-
-            <!-- Step Log -->
-            <h4 style="margin-top:var(--spacing-lg)">📋 事件日志</h4>
-            <div class="step-log" id="cbfc-log"></div>
-
-            <!-- Timeline -->
-            <div style="margin-top:var(--spacing-md);">
-                <div style="display:flex; justify-content:space-between; font-size:0.75em; color:var(--text-muted);">
-                    <span>Step 0</span>
-                    <span id="cbfc-step-label">Step 0 / 40</span>
-                    <span>Step 40</span>
-                </div>
-                <div class="timeline-bar">
-                    <div class="timeline-progress" id="cbfc-progress" style="width:0%"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================== TAB 3: BFC 动画 ========================== -->
-    <div class="tab-content" id="tab-anim-bfc">
-        <div class="section-card">
-            <h2>🎬 BFC (PFC) 阈值流控交互动画</h2>
-            <p style="color:var(--text-secondary); margin-bottom:var(--spacing-md);">
-                展示传统 PFC 基于阈值的流量控制过程，包含 XOFF/XON 信号交互和缓冲区状态变化。
-            </p>
-
-            <div class="ctrl-panel">
-                <button class="btn btn-warning" id="bfc-play-btn" onclick="bfcAnim.toggle()">▶ 播放</button>
-                <button class="btn btn-outline" onclick="bfcAnim.step()">⏭ 单步</button>
-                <button class="btn btn-outline" onclick="bfcAnim.reset()">↺ 重置</button>
-                <label style="font-size:0.85em; color:var(--text-secondary);">
-                    速度: <input type="range" min="1" max="5" value="2" style="width:100px; display:inline-block;"
-                                onchange="bfcAnim.setSpeed(parseFloat(this.value))">
-                </label>
-            </div>
-
-            <!-- Stats -->
-            <div class="stat-grid" style="margin-bottom:var(--spacing-lg);">
-                <div class="stat-item">
-                    <div class="stat-label">Buffer Used</div>
-                    <div class="stat-value" id="bfc-buf-used" style="color:var(--accent-orange)">0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Buffer Total</div>
-                    <div class="stat-value" id="bfc-buf-total" style="color:var(--accent-yellow)">16</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">XOFF Threshold</div>
-                    <div class="stat-value" id="bfc-threshold" style="color:var(--accent-red)">12</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Sender State</div>
-                    <div class="stat-value" id="bfc-sender-state" style="color:var(--accent-green); font-size:0.9em;">SENDING</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Packets Sent</div>
-                    <div class="stat-value" id="bfc-pkts-sent">0</div>
-                </div>
-                <div class="stat-item">
-                    <div class="stat-label">Packets Dropped</div>
-                    <div class="stat-value" id="bfc-pkts-drop" style="color:var(--accent-red)">0</div>
-                </div>
-            </div>
-
-            <!-- Animation SVG -->
-            <div class="anim-canvas" id="bfc-canvas">
-                <svg viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Sender -->
-                    <rect x="30" y="120" width="180" height="160" rx="12" fill="rgba(255,171,64,0.06)" stroke="#ffab40" stroke-width="2"/>
-                    <text x="120" y="148" text-anchor="middle" class="device-label" fill="#ffab40">SENDER</text>
-                    <text x="50" y="175" class="counter-label" fill="#8892b0">State: <tspan id="bfc-svg-state" fill="#69f0ae" font-weight="700">SENDING</tspan></text>
-                    <text x="50" y="198" class="counter-label" fill="#8892b0">Pkts Sent: <tspan id="bfc-svg-sent" fill="#4fc3f7" font-weight="700">0</tspan></text>
-                    <text x="50" y="221" class="counter-label" fill="#8892b0">Pkts Dropped: <tspan id="bfc-svg-drop" fill="#ff5252" font-weight="700">0</tspan></text>
-                    <rect x="50" y="238" width="140" height="24" rx="4" fill="rgba(0,0,0,0.3)" stroke="rgba(255,171,64,0.3)" id="bfc-sender-indicator"/>
-                    <text x="120" y="254" text-anchor="middle" class="counter-label" id="bfc-sender-bar-text" fill="#69f0ae">● ACTIVE</text>
-
-                    <!-- Receiver -->
-                    <rect x="590" y="120" width="180" height="160" rx="12" fill="rgba(255,171,64,0.06)" stroke="#ffab40" stroke-width="2"/>
-                    <text x="680" y="148" text-anchor="middle" class="device-label" fill="#ffab40">RECEIVER</text>
-                    <text x="610" y="175" class="counter-label" fill="#8892b0">Buffer:</text>
-                    <!-- Buffer bar -->
-                    <rect x="610" y="180" width="140" height="20" rx="4" fill="rgba(0,0,0,0.3)" stroke="rgba(255,171,64,0.2)" stroke-width="1"/>
-                    <rect x="610" y="180" width="0" height="20" rx="4" fill="#ffab40" id="bfc-rx-buf-bar"/>
-                    <!-- Threshold line -->
-                    <line x1="715" y1="178" x2="715" y2="202" stroke="#ff5252" stroke-width="2" stroke-dasharray="3,2"/>
-                    <text x="718" y="176" class="msg-label" fill="#ff5252">XOFF</text>
-                    <text x="610" y="220" class="counter-label" fill="#8892b0">Used: <tspan id="bfc-svg-used" fill="#ffab40" font-weight="700">0</tspan> / 16</text>
-                    <text x="610" y="240" class="counter-label" fill="#8892b0">Drain Rate: <tspan fill="#69f0ae" font-weight="700">~1 pkt/step</tspan></text>
-
-                    <!-- Link -->
-                    <line x1="210" y1="185" x2="590" y2="185" stroke="rgba(255,171,64,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
-                    <line x1="210" y1="215" x2="590" y2="215" stroke="rgba(255,82,82,0.2)" stroke-width="2" stroke-dasharray="6,4"/>
-                    <text x="400" y="178" text-anchor="middle" class="msg-label" fill="#8892b0">→ Data Packets →</text>
-                    <text x="400" y="230" text-anchor="middle" class="msg-label" fill="#8892b0">← PFC XOFF/XON ←</text>
-
-                    <!-- Animated packets -->
-                    <g id="bfc-packets"></g>
-                </svg>
-            </div>
-
-            <h4 style="margin-top:var(--spacing-lg)">📋 事件日志</h4>
-            <div class="step-log" id="bfc-log"></div>
-
-            <div style="margin-top:var(--spacing-md);">
-                <div style="display:flex; justify-content:space-between; font-size:0.75em; color:var(--text-muted);">
-                    <span>Step 0</span>
-                    <span id="bfc-step-label">Step 0 / 40</span>
-                    <span>Step 40</span>
-                </div>
-                <div class="timeline-bar">
-                    <div class="timeline-progress" id="bfc-progress" style="width:0%"></div>
-                </div>
-            </div>
-
-            <div class="warning-box" style="margin-top:var(--spacing-lg)">
-                <strong>⚠️ 注意：</strong>在 BFC/PFC 模式下，如果发送方响应 XOFF 不及时（例如线缆延迟被低估），接收方缓冲区可能溢出导致丢包。
-                这正是 CBFC 的优势所在 — 发送方在发送前已经知道接收方是否有足够缓冲。
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================== TAB 4: 架构设计 ========================== -->
-    <div class="tab-content" id="tab-arch">
-        <div class="section-card">
-            <h2>🏗️ CBFC 架构在 Ethernet 层模型中的位置</h2>
-            <p style="color:var(--text-secondary); margin-bottom:var(--spacing-lg);">
-                CBFC 主要在数据链路层实现，但需要 MAC、RS、PCS 子层的配合修改来正确传递 CtlOS 消息。(UE Spec Figure 5-7)
-            </p>
-
-            <div class="arch-diagram">
-                <div class="arch-row">
-                    <div class="arch-block">
-                        <div class="arch-name">Upper Layers</div>
-                        <div class="arch-desc">MAC Client</div>
-                    </div>
-                </div>
-                <div class="arch-arrow-down">↕</div>
-                <div class="arch-row">
-                    <div class="arch-block highlight-cbfc">
-                        <div class="arch-name">CBFC Layer</div>
-                        <div class="arch-desc">信用管理 / CC+CF 计数器</div>
-                        <span class="feature-tag tag-cbfc" style="margin-top:6px">UE Extension</span>
-                    </div>
-                    <div class="arch-arrow">⟷</div>
-                    <div class="arch-block highlight-bfc">
-                        <div class="arch-name">PFC (BFC)</div>
-                        <div class="arch-desc">XOFF/XON 控制</div>
-                        <span class="feature-tag tag-bfc" style="margin-top:6px">IEEE 802.1Q</span>
-                    </div>
-                </div>
-                <div class="arch-arrow-down">↕</div>
-                <div class="arch-row">
-                    <div class="arch-block">
-                        <div class="arch-name">MAC Control</div>
-                        <div class="arch-desc">MA_DATA / MA_CONTROL</div>
-                    </div>
-                </div>
-                <div class="arch-arrow-down">↕</div>
-                <div class="arch-row">
-                    <div class="arch-block">
-                        <div class="arch-name">MAC</div>
-                        <div class="arch-desc">CtlOS 插入/提取</div>
-                    </div>
-                </div>
-                <div class="arch-arrow-down">↕</div>
-                <div class="arch-row">
-                    <div class="arch-block">
-                        <div class="arch-name">RS (Reconciliation)</div>
-                        <div class="arch-desc">xMII 接口</div>
-                    </div>
-                </div>
-                <div class="arch-arrow-down">↕</div>
-                <div class="arch-row">
-                    <div class="arch-block">
-                        <div class="arch-name">PCS (64B/66B)</div>
-                        <div class="arch-desc">O-code=0x6 for CtlOS</div>
-                    </div>
-                    <div class="arch-arrow">→</div>
-                    <div class="arch-block">
-                        <div class="arch-name">FEC + PMA + PMD</div>
-                        <div class="arch-desc">Physical Medium</div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="info-box">
-                <strong>ℹ️ 关键设计点：</strong>CBFC 和 PFC 可以同时运行在同一链路上。CBFC 管理主输入缓冲区，PFC 管理另一个缓冲点或每包资源。
-                两者互不干扰，但 PFC 控制包必须是 LLR-ineligible 且属于 best-effort VC。
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>📐 CBFC 消息架构</h2>
-            <div class="compare-grid">
-                <div class="module-box">
-                    <div class="module-header">CF_Update — 信用释放消息</div>
-                    <div class="module-ref">Receiver → Sender | CtlOS 格式 | 8 Bytes</div>
-                    <div class="module-detail">
-                        <p>• <strong>方向：</strong>接收方 → 发送方</p>
-                        <p>• <strong>格式：</strong>Control Ordered Set (CtlOS)，8 字节</p>
-                        <p>• <strong>频率：</strong>高频（CF_min_timer ≥ 800B 线路时间）</p>
-                        <p>• <strong>内容：</strong>两个 R_VC_CF[x] 计数器值</p>
-                        <p>• <strong>特性：</strong>可抢占正在传输的数据包（256B 之后）</p>
-                        <p>• <strong>带宽：</strong>通常 < 0.5% 链路带宽</p>
-                    </div>
-                </div>
-                <div class="module-box">
-                    <div class="module-header">CC_Update — 信用消耗同步消息</div>
-                    <div class="module-ref">Sender → Receiver | Packet 格式 | 64 Bytes</div>
-                    <div class="module-detail">
-                        <p>• <strong>方向：</strong>发送方 → 接收方</p>
-                        <p>• <strong>格式：</strong>标准 Ethernet Packet，64 字节 (EtherType: 0x8808)</p>
-                        <p>• <strong>频率：</strong>低频 (< 0.01% 带宽)</p>
-                        <p>• <strong>内容：</strong>最多 16 个 S_VC_CC[x] 计数器值</p>
-                        <p>• <strong>目的：</strong>恢复因 CRC 错误或 FEC 错误导致的信用泄漏</p>
-                        <p>• <strong>保序：</strong>必须与数据包保持相对顺序</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>🔧 CBFC 初始化流程（LLDP 协商）</h2>
-            <div style="font-family:var(--font-mono); font-size:0.85em; line-height:2; padding:var(--spacing-md); background:rgba(0,0,0,0.2); border-radius:var(--border-radius-sm);">
-                <p style="color:var(--accent-cyan)">① Receiver → LLDP TLV: R_VC_WANT[x]=1, R_TotalCredits, R_CellSize, R_PktOvhd</p>
-                <p style="color:var(--accent-blue)">② Sender 读取 Remote DB → 配置 VC[x] → 设置 CreditSize, CreditLimit</p>
-                <p style="color:var(--accent-cyan)">③ Sender → LLDP TLV: S_VC_RTS[x]=1, S_CreditSize, S_PktOvhd</p>
-                <p style="color:var(--accent-blue)">④ Receiver 读取 Remote DB → 配置接收参数</p>
-                <p style="color:var(--accent-green)">⑤ Receiver → LLDP TLV: R_VC_RTR[x]=1</p>
-                <p style="color:var(--accent-green)">⑥ Sender 看到 R_VC_RTR[x]=1 → <strong>开始发送数据！</strong></p>
-            </div>
-            <div class="info-box" style="margin-top:var(--spacing-md)">
-                <strong>三握手过程：</strong>WANT → RTS → RTR，确保双方参数完全协商一致后才开始传输。
-                配置参数包括 CreditSize（32~2048B）、NumVCs（2~32）、TotalCredits（最大 2¹⁹-1）等。
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================== TAB 5: 应用场景 ========================== -->
-    <div class="tab-content" id="tab-scenarios">
-        <div class="section-card">
-            <h2>🌐 应用场景分析</h2>
-
-            <div class="scenario-grid">
-                <div class="scenario-card">
-                    <div class="scenario-icon">🧠</div>
-                    <div class="scenario-title">AI/HPC 集群 — 无损网络</div>
-                    <div class="scenario-desc">
-                        大规模 AI 训练和 HPC 计算需要极低的丢包率。CBFC 通过信用机制在链路层实现逐跳无损传输，
-                        配合 UE Transport 层的端到端可靠传输（SES/PDS），构建全栈无损网络。
-                        每个 VC 的独立信用控制避免了头部阻塞问题。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-cbfc">CBFC 推荐</span>
-                        <span class="feature-tag tag-cbfc">Lossless Fabric</span>
-                    </div>
-                </div>
-
-                <div class="scenario-card">
-                    <div class="scenario-icon">🔀</div>
-                    <div class="scenario-title">多租户交换网络 — 混合流控</div>
-                    <div class="scenario-desc">
-                        在多租户数据中心，不同租户可能需要不同的 QoS 保证。CBFC 的 32 个 VC 可以为不同租户或流量类型
-                        分配独立的信用空间，低吞吐量用户分配少量信用即可。PFC 可同时管理其他资源。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-cbfc">CBFC</span>
-                        <span class="feature-tag tag-bfc">PFC</span>
-                        <span class="feature-tag tag-both">可共存</span>
-                    </div>
-                </div>
-
-                <div class="scenario-card">
-                    <div class="scenario-icon">🏎️</div>
-                    <div class="scenario-title">800GE 超高速链路</div>
-                    <div class="scenario-desc">
-                        在 800 Gb/s 以太网链路上，PFC 对线缆延迟极其敏感。以 500m 铜缆为例，RTT ≈ 5µs，
-                        在此期间可传输约 7.8k 个 64B 信用的数据。CBFC 的信用预授权机制避免了这种时序风险，
-                        即使延迟估算错误也只是降低利用率而非丢包。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-cbfc">CBFC 优势明显</span>
-                    </div>
-                </div>
-
-                <div class="scenario-card">
-                    <div class="scenario-icon">📡</div>
-                    <div class="scenario-title">长距离链路 (> 100m)</div>
-                    <div class="scenario-desc">
-                        CBFC 不敏感于线缆长度。在长距离链路中，PFC 需要更大的突发吸收缓冲来应对信号往返延迟，
-                        而 CBFC 自然适应，因为发送方始终知道接收方的可用空间。
-                        需要注意的是，更长的链路需要更多信用来保持链路利用率。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-cbfc">CBFC 推荐</span>
-                    </div>
-                </div>
-
-                <div class="scenario-card">
-                    <div class="scenario-icon">⚡</div>
-                    <div class="scenario-title">最佳努力（Best-Effort）网络</div>
-                    <div class="scenario-desc">
-                        在 best-effort 网络中，UET 层通过端到端重传和拥塞控制保证可靠传输。此时 CBFC 和 PFC
-                        均<strong>不建议</strong>在 switch-to-switch 链路上启用，因为会违反拥塞控制算法的延迟假设。
-                        端到端 UET-CC 是正确的拥塞管理方式。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-both">均不推荐</span>
-                    </div>
-                </div>
-
-                <div class="scenario-card">
-                    <div class="scenario-icon">🔄</div>
-                    <div class="scenario-title">自适应路由与负载均衡</div>
-                    <div class="scenario-desc">
-                        CBFC 的独特优势：发送方知道每个 VC 的信用使用情况，可以利用这些信息做出更智能的调度决策，
-                        包括自适应路由和负载均衡。PFC 只能告诉发送方"停"或"走"，无法提供这种细粒度信息。
-                    </div>
-                    <div class="scenario-tags">
-                        <span class="feature-tag tag-cbfc">CBFC 独有</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>📋 场景选择决策树</h2>
-            <div style="font-family:var(--font-mono); font-size:0.88em; line-height:2.2; padding:var(--spacing-lg); background:rgba(0,0,0,0.2); border-radius:var(--border-radius-sm);">
-                <p>需要 <strong>逐跳无损</strong> 传输？</p>
-                <p style="padding-left:2em;">├─ 是 → 需要 <strong>精细 VC 控制</strong>（> 8 个优先级）？</p>
-                <p style="padding-left:4em;">│   ├─ 是 → <span class="feature-tag tag-cbfc">使用 CBFC</span>（最多 32 VCs）</p>
-                <p style="padding-left:4em;">│   └─ 否 → 对 <strong>线缆延迟敏感</strong>？</p>
-                <p style="padding-left:6em;">│       ├─ 是 → <span class="feature-tag tag-cbfc">使用 CBFC</span></p>
-                <p style="padding-left:6em;">│       └─ 否 → 需要 <strong>最简实现</strong>？</p>
-                <p style="padding-left:8em;">│           ├─ 是 → <span class="feature-tag tag-bfc">使用 PFC</span></p>
-                <p style="padding-left:8em;">│           └─ 否 → <span class="feature-tag tag-both">CBFC + PFC 共存</span></p>
-                <p style="padding-left:2em;">└─ 否 → <strong>Best-Effort</strong> 网络</p>
-                <p style="padding-left:4em;">    └─ 使用端到端 UET-CC 拥塞控制 <span style="color:var(--accent-green)">(推荐)</span></p>
-            </div>
-        </div>
-    </div>
-
-    <!-- ========================== TAB 6: 技术细节 ========================== -->
-    <div class="tab-content" id="tab-detail">
-        <div class="section-card">
-            <h2>🔬 CBFC 循环计数器机制</h2>
-            <p style="color:var(--text-secondary);">
-                CBFC 使用循环（wrap-around）计数器来跟踪信用，确保在丢包或消息丢失时的弹性恢复。
-            </p>
-            <div class="compare-grid" style="margin-top:var(--spacing-lg);">
-                <div class="module-box">
-                    <div class="module-header">CC 计数器 (Credit Consumed)</div>
-                    <div class="module-detail">
-                        <p>• <strong>宽度：</strong>20 bits (支持 2¹⁹ credits)</p>
-                        <p>• <strong>Sender 侧：</strong>每发送一个包，CC += 该包所需信用数</p>
-                        <p>• <strong>Receiver 侧：</strong>每接收一个包，CC += 该包所需信用数</p>
-                        <p>• <strong>同步：</strong>Sender 通过 CC_Update 包发送 S_VC_CC[x]</p>
-                        <p>• <strong>比较：</strong>Receiver 对比 S_VC_CC[x] 与 R_VC_CC[x]</p>
-                        <p>• <strong>信用恢复：</strong>如果 S_CC < R_CC，说明有包丢失，Receiver 调整计数</p>
-                    </div>
-                </div>
-                <div class="module-box">
-                    <div class="module-header">CF 计数器 (Credit Freed)</div>
-                    <div class="module-detail">
-                        <p>• <strong>宽度：</strong>15 bits (支持 16k in-flight credits)</p>
-                        <p>• <strong>Receiver 侧：</strong>每释放缓冲区空间，CF += 释放的信用数</p>
-                        <p>• <strong>Sender 侧：</strong>接收 CF_Update 后更新 S_CF</p>
-                        <p>• <strong>可用信用计算：</strong></p>
-                        <p>  <code>Available = CreditLimit - (S_CC - S_CF)</code></p>
-                        <p>• <strong>Port 级限制：</strong></p>
-                        <p>  <code>S_P_CU = Σ(S_VC_CC[i] - S_VC_CF[i]) ≤ S_P_CL</code></p>
-                    </div>
-                </div>
-            </div>
-
-            <div class="info-box">
-                <strong>弹性设计：</strong>由于计数器始终递增且周期性同步，即使 CF_Update 消息丢失，下一次同步也能自动恢复正确的信用状态。
-                这比 PFC 的 XOFF/XON 机制更为健壮 — PFC 帧丢失可能导致死锁或缓冲溢出。
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>📦 信用计算公式</h2>
-            <div style="background:rgba(0,0,0,0.3); padding:var(--spacing-lg); border-radius:var(--border-radius-sm); font-family:var(--font-mono); font-size:0.9em; line-height:2.2;">
-                <p style="color:var(--accent-cyan)">// 每包所需信用数计算</p>
-                <p>CreditsPerPacket = ⌈(PktOvhd + FrameSize) / CreditSize⌉</p>
-                <p></p>
-                <p style="color:var(--accent-cyan)">// 发送方可用信用</p>
-                <p>VC_Available[x] = VC_CreditLimit[x] - (S_VC_CC[x] - S_VC_CF[x])</p>
-                <p></p>
-                <p style="color:var(--accent-cyan)">// 发送条件 (Port 级 + VC 级)</p>
-                <p>CanSend = (VC_Available[x] ≥ CreditsPerPacket) AND (S_P_CU + CreditsPerPacket ≤ S_P_CL)</p>
-                <p></p>
-                <p style="color:var(--accent-cyan)">// 循环计数器比较 (10-bit example)</p>
-                <p>C_new = (C_old + N) mod 2¹⁰</p>
-                <p>A > B  iff  0 < (A - B) mod 2¹⁰ < 2⁹</p>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>🔗 CBFC 与 LLR 交互规则</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>规则</th>
-                            <th>说明</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>1</td>
-                            <td>LLR Replay 期间不更新 S_VC_CC 和 S_P_CU</td>
-                            <td>重传包已在首次传输时计数</td>
-                        </tr>
-                        <tr>
-                            <td>2</td>
-                            <td>LLR Discard 期间不更新 R_VC_CC（LLR-eligible 包）</td>
-                            <td>丢弃的包将在重传时计数</td>
-                        </tr>
-                        <tr>
-                            <td>3</td>
-                            <td>LLR Discard 期间丢弃所有 CC_Update 包</td>
-                            <td>避免 CC 计数器不一致</td>
-                        </tr>
-                        <tr>
-                            <td>4</td>
-                            <td>LLR Discard 期间仍处理 CF_Update CtlOS</td>
-                            <td>保持信用归还流程不中断</td>
-                        </tr>
-                        <tr>
-                            <td>5</td>
-                            <td>PFC 包必须是 LLR-ineligible</td>
-                            <td>PFC 不参与 LLR 重传</td>
-                        </tr>
-                        <tr>
-                            <td>6</td>
-                            <td>建议 CBFC Lossless 包同时为 LLR-eligible</td>
-                            <td>双重保障：链路级重传 + 信用流控</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="section-card">
-            <h2>📏 CtlOS 插入规则</h2>
-            <div class="table-wrapper">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>规则</th>
-                            <th>要求</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr><td>对齐</td><td>CtlOS 必须 8 字节对齐，xMII 控制码在 lane 0</td></tr>
-                        <tr><td>抢占限制</td><td>不得在包的前 256 字节内抢占</td></tr>
-                        <tr><td>最小间距</td><td>两个 CtlOS 之间至少 400B（保证 < 2% 带宽）</td></tr>
-                        <tr><td>推荐间距</td><td>~1600B（保持 < 0.5% 带宽）</td></tr>
-                        <tr><td>PCS 编码</td><td>O-code = 0x6（区别于序列有序集 O-code = 0x0）</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-
-</div><!-- end container -->
-
-<!-- ====== Footer ====== -->
-<div class="page-footer">
-    CBFC vs BFC — 基于 Ultra Ethernet Specification v1.0 §5.2 | UE Consortium™ 2025
-</div>
-
-<!-- ====== Scripts ====== -->
-<script src="common.js"></script>
-<script>
-(function() {
-    'use strict';
-
-    // ============================================
-    // Tab Initialization
-    // ============================================
-    CommonTabs.init('#main-tabs');
-    CommonNav.init('cbfc_vs_bfc', [
-        { id: 'cbfc_vs_bfc', label: 'CBFC vs BFC', file: 'cbfcVSbfc.html' }
-    ]);
-
-    // ============================================
-    // CBFC Animation State
-    // ============================================
-    const CBFC_TOTAL_STEPS = 40;
-    const CBFC_CREDIT_LIMIT = 16;
-    let cbfcState = {
-        step: 0,
-        sCC: 0, sCF: 0,
-        rCC: 0, rCF: 0,
-        rxBuffer: [],  // array of VC indices
-        bufferCapacity: 16,
-        pendingCF: 0,
-        pktsInFlight: []
-    };
-
-    function cbfcReset() {
-        cbfcState = {
-            step: 0,
-            sCC: 0, sCF: 0,
-            rCC: 0, rCF: 0,
-            rxBuffer: [],
-            bufferCapacity: 16,
-            pendingCF: 0,
-            pktsInFlight: []
-        };
-        document.getElementById('cbfc-log').innerHTML = '';
-        cbfcUpdateUI();
-        clearSVGPackets('cbfc-packets');
-        const btn = document.getElementById('cbfc-play-btn');
-        btn.textContent = '▶ 播放';
-    }
-
-    function cbfcStep() {
-        if (cbfcState.step >= CBFC_TOTAL_STEPS) return false;
-        cbfcState.step++;
-        const s = cbfcState;
-
-        // Drain 1 packet from receiver buffer every 2 steps
-        if (s.step % 2 === 0 && s.rxBuffer.length > 0) {
-            s.rxBuffer.shift();
-            s.rCF++;
-            s.pendingCF++;
-            cbfcLog('cbfc-msg', `Receiver: 释放缓冲 → R_CF[0]=${s.rCF}`);
-        }
-
-        // Return credits (CF_Update) every 3 steps
-        if (s.step % 3 === 0 && s.pendingCF > 0) {
-            s.sCF += s.pendingCF;
-            cbfcLog('cbfc-msg', `CF_Update (CtlOS 8B): R_VC_CF[0]=${s.rCF} → Sender 更新 S_CF=${s.sCF}`);
-            animateSVGPacket('cbfc-packets', 580, 195, 220, 195, '#ffab40', 'CF');
-            s.pendingCF = 0;
-        }
-
-        // Send CC_Update every 10 steps
-        if (s.step % 10 === 0 && s.step > 0) {
-            cbfcLog('data-msg', `CC_Update (64B Pkt): S_VC_CC[0]=${s.sCC} → Receiver 核对`);
-            animateSVGPacket('cbfc-packets', 220, 175, 580, 175, '#4fc3f7', 'CC');
-            // Receiver verifies
-            if (s.sCC !== s.rCC) {
-                const leaked = s.rCC - s.sCC;
-                cbfcLog('warn-msg', `⚠ 检测到信用泄漏: S_CC=${s.sCC} vs R_CC=${s.rCC}, 差异=${leaked}`);
-                s.rCC = s.sCC;
+            // ==================== 初始化 ====================
+            function init() {
+                CommonNav.init('pfc-cbfc');
+                setupTimelineEvents();
+                bindEventListeners();
+                initAnimationController();
+                initViewToggle();
+                updateDisplay();
             }
-        }
 
-        // Try to send data packet
-        const avail = CBFC_CREDIT_LIMIT - (s.sCC - s.sCF);
-        if (avail >= 1 && s.step % 1 === 0) {
-            s.sCC++;
-            s.rCC++;
-            s.rxBuffer.push(0);
-            cbfcLog('data-msg', `Sender: 发送 PKT → S_CC[0]=${s.sCC}, Available=${CBFC_CREDIT_LIMIT - (s.sCC - s.sCF)}`);
-            animateSVGPacket('cbfc-packets', 220, 185, 580, 185, '#64ffda', 'D');
-        } else if (avail < 1) {
-            cbfcLog('warn-msg', `⏸ Sender: VC[0] 信用不足 (avail=${avail})，等待 CF_Update...`);
-        }
+            // ==================== 时序图设置 ====================
+            function setupTimelineEvents() {
+                // PFC 时序
+                const pfcSenderEvents = document.getElementById('pfc-sender-timeline');
+                const pfcReceiverEvents = document.getElementById('pfc-receiver-timeline');
+                const pfcBufferEvents = document.getElementById('pfc-buffer-timeline');
 
-        cbfcUpdateUI();
-        return s.step < CBFC_TOTAL_STEPS;
-    }
+                if (pfcSenderEvents) {
+                    pfcSenderEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event pfc-packet" style="left: 5%;">📤 Data1</div>
+                        <div class="timeline-event pfc-packet" style="left: 15%;">📤 Data2</div>
+                        <div class="timeline-event pfc-packet" style="left: 25%;">⏸ PAUSE</div>
+                        <div class="timeline-event pfc-packet" style="left: 60%;">📤 Resume</div>
+                    `;
+                }
 
-    function cbfcUpdateUI() {
-        const s = cbfcState;
-        const avail = CBFC_CREDIT_LIMIT - (s.sCC - s.sCF);
+                if (pfcReceiverEvents) {
+                    pfcReceiverEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event pfc-ctrl" style="left: 5%;">📥 Recv1</div>
+                        <div class="timeline-event pfc-ctrl" style="left: 15%;">📥 Recv2</div>
+                        <div class="timeline-event pfc-ctrl" style="left: 25%;">📢 PAUSE</div>
+                        <div class="timeline-event pfc-ctrl" style="left: 60%;">📥 Recv3</div>
+                    `;
+                }
 
-        document.getElementById('cbfc-s-cc').textContent = s.sCC;
-        document.getElementById('cbfc-s-cf').textContent = s.sCF;
-        document.getElementById('cbfc-avail').textContent = Math.max(0, avail);
-        document.getElementById('cbfc-r-cc').textContent = s.rCC;
-        document.getElementById('cbfc-r-cf').textContent = s.rCF;
+                if (pfcBufferEvents) {
+                    pfcBufferEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event" style="left: 5%; background: var(--accent-orange);">▓▓</div>
+                        <div class="timeline-event" style="left: 15%; background: var(--accent-red);">▓▓▓</div>
+                        <div class="timeline-event" style="left: 25%; background: var(--accent-yellow);">🔔 Full</div>
+                        <div class="timeline-event" style="left: 60%; background: var(--accent-green);">▓</div>
+                    `;
+                }
 
-        // SVG text
-        const svgSCC = document.getElementById('cbfc-svg-scc');
-        const svgSCF = document.getElementById('cbfc-svg-scf');
-        const svgAvail = document.getElementById('cbfc-svg-avail');
-        const svgRCC = document.getElementById('cbfc-svg-rcc');
-        const svgRCF = document.getElementById('cbfc-svg-rcf');
-        if (svgSCC) svgSCC.textContent = s.sCC;
-        if (svgSCF) svgSCF.textContent = s.sCF;
-        if (svgAvail) svgAvail.textContent = Math.max(0, avail);
-        if (svgRCC) svgRCC.textContent = s.rCC;
-        if (svgRCF) svgRCF.textContent = s.rCF;
+                // CBFC 时序
+                const cbfcSenderEvents = document.getElementById('cbfc-sender-timeline');
+                const cbfcReceiverEvents = document.getElementById('cbfc-receiver-timeline');
+                const cbfcCreditEvents = document.getElementById('cbfc-credit-timeline');
 
-        // Sender queue bar
-        const qBar = document.getElementById('cbfc-sender-q');
-        if (qBar) {
-            const usage = Math.min(100, ((s.sCC - s.sCF) / CBFC_CREDIT_LIMIT) * 140);
-            qBar.setAttribute('width', Math.max(0, usage));
-        }
+                if (cbfcSenderEvents) {
+                    cbfcSenderEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event cbfc-data" style="left: 5%;">📤 Data1</div>
+                        <div class="timeline-event cbfc-data" style="left: 15%;">📤 Data2</div>
+                        <div class="timeline-event cbfc-data" style="left: 25%;">📤 Data3</div>
+                        <div class="timeline-event cbfc-data" style="left: 35%;">📤 Data4</div>
+                        <div class="timeline-event cbfc-credit" style="left: 40%;">🔄 CC_Update</div>
+                        <div class="timeline-event cbfc-data" style="left: 55%;">📤 Data5</div>
+                    `;
+                }
 
-        // Receiver buffer visualization
-        const bufGroup = document.getElementById('cbfc-rx-buffer');
-        if (bufGroup) {
-            bufGroup.innerHTML = '';
-            for (let i = 0; i < s.bufferCapacity; i++) {
-                const x = 610 + i * 9;
-                const used = i < s.rxBuffer.length;
-                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                rect.setAttribute('x', x);
-                rect.setAttribute('y', used ? 182 : 194);
-                rect.setAttribute('width', 7);
-                rect.setAttribute('height', used ? 18 : 6);
-                rect.setAttribute('rx', 1);
-                rect.setAttribute('fill', used ? '#64ffda' : 'rgba(100,255,218,0.15)');
-                bufGroup.appendChild(rect);
-            }
-        }
+                if (cbfcReceiverEvents) {
+                    cbfcReceiverEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event cbfc-data" style="left: 5%;">📥 Recv1</div>
+                        <div class="timeline-event cbfc-data" style="left: 15%;">📥 Recv2</div>
+                        <div class="timeline-event cbfc-data" style="left: 25%;">📥 Recv3</div>
+                        <div class="timeline-event cbfc-data" style="left: 35%;">📥 Recv4</div>
+                        <div class="timeline-event cbfc-credit" style="left: 40%;">📢 CC_Update</div>
+                        <div class="timeline-event cbfc-data" style="left: 55%;">📥 Recv5</div>
+                    `;
+                }
 
-        // Progress
-        const pct = (s.step / CBFC_TOTAL_STEPS) * 100;
-        document.getElementById('cbfc-progress').style.width = pct + '%';
-        document.getElementById('cbfc-step-label').textContent = `Step ${s.step} / ${CBFC_TOTAL_STEPS}`;
-    }
-
-    function cbfcLog(cls, msg) {
-        const log = document.getElementById('cbfc-log');
-        const entry = document.createElement('div');
-        entry.className = 'log-entry ' + cls;
-        entry.innerHTML = `<span class="log-time">[Step ${cbfcState.step}]</span>${msg}`;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
-    }
-
-    const cbfcAnim = new AnimationController({
-        stepFn: cbfcStep,
-        interval: 800,
-        onReset: cbfcReset,
-        onComplete() {
-            cbfcLog('cbfc-msg', '✅ CBFC 动画完成');
-            document.getElementById('cbfc-play-btn').textContent = '▶ 播放';
-        }
-    });
-
-    // Override toggle for button text
-    const origCbfcToggle = cbfcAnim.toggle.bind(cbfcAnim);
-    cbfcAnim.toggle = function() {
-        origCbfcToggle();
-        const btn = document.getElementById('cbfc-play-btn');
-        btn.textContent = cbfcAnim.isRunning ? '⏸ 暂停' : '▶ 播放';
-    };
-    cbfcAnim.reset = function() {
-        cbfcAnim.stop();
-        cbfcReset();
-    };
-
-    window.cbfcAnim = cbfcAnim;
-
-    // ============================================
-    // BFC (PFC) Animation State
-    // ============================================
-    const BFC_TOTAL_STEPS = 40;
-    const BFC_BUF_TOTAL = 16;
-    const BFC_XOFF_THRESHOLD = 12;
-    let bfcState = {
-        step: 0,
-        bufUsed: 0,
-        senderPaused: false,
-        pktsSent: 0,
-        pktsDropped: 0,
-        pauseTimer: 0
-    };
-
-    function bfcReset() {
-        bfcState = {
-            step: 0,
-            bufUsed: 0,
-            senderPaused: false,
-            pktsSent: 0,
-            pktsDropped: 0,
-            pauseTimer: 0
-        };
-        document.getElementById('bfc-log').innerHTML = '';
-        bfcUpdateUI();
-        clearSVGPackets('bfc-packets');
-        document.getElementById('bfc-play-btn').textContent = '▶ 播放';
-    }
-
-    function bfcStep() {
-        if (bfcState.step >= BFC_TOTAL_STEPS) return false;
-        bfcState.step++;
-        const s = bfcState;
-
-        // Drain 1 packet every 2 steps
-        if (s.step % 2 === 0 && s.bufUsed > 0) {
-            s.bufUsed--;
-            bfcLog('bfc-msg', `Receiver: 处理 1 包 → Buffer=${s.bufUsed}/${BFC_BUF_TOTAL}`);
-        }
-
-        // Check if we should send XON (buffer below half threshold)
-        if (s.senderPaused && s.bufUsed < BFC_XOFF_THRESHOLD / 2) {
-            s.senderPaused = false;
-            s.pauseTimer = 0;
-            bfcLog('bfc-msg', `PFC XON → Sender 恢复发送 (Buffer=${s.bufUsed})`);
-            animateSVGPacket('bfc-packets', 580, 195, 220, 195, '#69f0ae', 'XON');
-        }
-
-        // Pause timer countdown
-        if (s.senderPaused) {
-            s.pauseTimer--;
-            if (s.pauseTimer <= 0) {
-                s.senderPaused = false;
-                bfcLog('bfc-msg', `PFC 暂停时间到期 → Sender 恢复`);
-            }
-        }
-
-        // Sender tries to send (2 packets per step when active)
-        if (!s.senderPaused) {
-            const sendCount = (s.step > 15 && s.step < 30) ? 3 : 2; // burst
-            for (let i = 0; i < sendCount; i++) {
-                if (s.bufUsed < BFC_BUF_TOTAL) {
-                    s.bufUsed++;
-                    s.pktsSent++;
-                    animateSVGPacket('bfc-packets', 220, 185, 580, 185, '#ffab40', 'D');
-                } else {
-                    s.pktsDropped++;
-                    bfcLog('warn-msg', `💀 缓冲溢出！丢包 #${s.pktsDropped}（Buffer FULL）`);
-                    animateSVGPacket('bfc-packets', 220, 185, 450, 185, '#ff5252', 'X');
+                if (cbfcCreditEvents) {
+                    cbfcCreditEvents.innerHTML = `
+                        <div class="timeline-line"></div>
+                        <div class="timeline-event cbfc-credit" style="left: 5%;">1000</div>
+                        <div class="timeline-event cbfc-credit" style="left: 15%;">976</div>
+                        <div class="timeline-event cbfc-credit" style="left: 25%;">952</div>
+                        <div class="timeline-event cbfc-credit" style="left: 35%;">928</div>
+                        <div class="timeline-event cbfc-credit" style="left: 40%;">1163</div>
+                        <div class="timeline-event cbfc-credit" style="left: 55%;">1139</div>
+                    `;
                 }
             }
-            bfcLog('data-msg', `Sender: 发送 ${sendCount} 包 → Buffer=${s.bufUsed}/${BFC_BUF_TOTAL}`);
-        } else {
-            bfcLog('warn-msg', `⏸ Sender: PAUSED (timer=${s.pauseTimer})`);
-        }
 
-        // Check XOFF threshold
-        if (s.bufUsed >= BFC_XOFF_THRESHOLD && !s.senderPaused) {
-            s.senderPaused = true;
-            s.pauseTimer = 5;
-            bfcLog('bfc-msg', `PFC XOFF → Buffer=${s.bufUsed} ≥ Threshold=${BFC_XOFF_THRESHOLD}, 暂停 5 steps`);
-            animateSVGPacket('bfc-packets', 580, 215, 220, 215, '#ff5252', 'XOFF');
-        }
+            // ==================== 事件绑定 ====================
+            function bindEventListeners() {
+                document.getElementById('fc-play-btn').addEventListener('click', () => {
+                    animController.start();
+                });
 
-        bfcUpdateUI();
-        return s.step < BFC_TOTAL_STEPS;
-    }
+                document.getElementById('fc-pause-btn').addEventListener('click', () => {
+                    animController.stop();
+                });
 
-    function bfcUpdateUI() {
-        const s = bfcState;
-        document.getElementById('bfc-buf-used').textContent = s.bufUsed;
-        document.getElementById('bfc-pkts-sent').textContent = s.pktsSent;
-        document.getElementById('bfc-pkts-drop').textContent = s.pktsDropped;
+                document.getElementById('fc-reset-btn').addEventListener('click', () => {
+                    animController.reset();
+                });
 
-        const stateEl = document.getElementById('bfc-sender-state');
-        const svgState = document.getElementById('bfc-svg-state');
-        const svgSent = document.getElementById('bfc-svg-sent');
-        const svgDrop = document.getElementById('bfc-svg-drop');
-        const svgUsed = document.getElementById('bfc-svg-used');
-        const barText = document.getElementById('bfc-sender-bar-text');
-        const indicator = document.getElementById('bfc-sender-indicator');
+                document.getElementById('fc-step-btn').addEventListener('click', () => {
+                    animController.stop();
+                    animController.step();
+                });
 
-        if (s.senderPaused) {
-            stateEl.textContent = 'PAUSED';
-            stateEl.style.color = 'var(--accent-red)';
-            if (svgState) { svgState.textContent = 'PAUSED'; svgState.setAttribute('fill', '#ff5252'); }
-            if (barText) { barText.textContent = '⏸ PAUSED'; barText.setAttribute('fill', '#ff5252'); }
-            if (indicator) indicator.setAttribute('fill', 'rgba(255,82,82,0.2)');
-        } else {
-            stateEl.textContent = 'SENDING';
-            stateEl.style.color = 'var(--accent-green)';
-            if (svgState) { svgState.textContent = 'SENDING'; svgState.setAttribute('fill', '#69f0ae'); }
-            if (barText) { barText.textContent = '● ACTIVE'; barText.setAttribute('fill', '#69f0ae'); }
-            if (indicator) indicator.setAttribute('fill', 'rgba(0,0,0,0.3)');
-        }
+                document.getElementById('fc-speed').addEventListener('input', (e) => {
+                    speedMultiplier = parseFloat(e.target.value);
+                    animController.setSpeed(speedMultiplier);
+                    document.getElementById('fc-speed-val').textContent = speedMultiplier.toFixed(1) + 'x';
+                    document.getElementById('fc-speed-display').textContent = speedMultiplier.toFixed(1) + 'x';
+                });
 
-        if (svgSent) svgSent.textContent = s.pktsSent;
-        if (svgDrop) svgDrop.textContent = s.pktsDropped;
-        if (svgUsed) svgUsed.textContent = s.bufUsed;
+                // 视图切换
+                document.getElementById('view-mechanism').addEventListener('click', () => {
+                    switchView('mechanism');
+                });
 
-        // Buffer bar
-        const bufBar = document.getElementById('bfc-rx-buf-bar');
-        if (bufBar) {
-            const w = (s.bufUsed / BFC_BUF_TOTAL) * 140;
-            bufBar.setAttribute('width', w);
-            if (s.bufUsed >= BFC_XOFF_THRESHOLD) {
-                bufBar.setAttribute('fill', '#ff5252');
-            } else if (s.bufUsed >= BFC_XOFF_THRESHOLD * 0.7) {
-                bufBar.setAttribute('fill', '#ffab40');
-            } else {
-                bufBar.setAttribute('fill', '#69f0ae');
+                document.getElementById('view-sequence').addEventListener('click', () => {
+                    switchView('sequence');
+                });
+
+                document.getElementById('view-comparison').addEventListener('click', () => {
+                    switchView('comparison');
+                });
             }
-        }
 
-        const pct = (s.step / BFC_TOTAL_STEPS) * 100;
-        document.getElementById('bfc-progress').style.width = pct + '%';
-        document.getElementById('bfc-step-label').textContent = `Step ${s.step} / ${BFC_TOTAL_STEPS}`;
-    }
+            // ==================== 视图切换 ====================
+            function switchView(mode) {
+                viewMode = mode;
+                document.querySelectorAll('.view-section').forEach(el => {
+                    el.classList.remove('active');
+                });
 
-    function bfcLog(cls, msg) {
-        const log = document.getElementById('bfc-log');
-        const entry = document.createElement('div');
-        entry.className = 'log-entry ' + cls;
-        entry.innerHTML = `<span class="log-time">[Step ${bfcState.step}]</span>${msg}`;
-        log.appendChild(entry);
-        log.scrollTop = log.scrollHeight;
-    }
+                document.querySelectorAll('.btn-view').forEach(el => {
+                    el.classList.remove('active');
+                });
 
-    const bfcAnim = new AnimationController({
-        stepFn: bfcStep,
-        interval: 800,
-        onReset: bfcReset,
-        onComplete() {
-            bfcLog('bfc-msg', `✅ BFC 动画完成 — 共发送 ${bfcState.pktsSent} 包, 丢弃 ${bfcState.pktsDropped} 包`);
-            document.getElementById('bfc-play-btn').textContent = '▶ 播放';
-        }
-    });
-
-    const origBfcToggle = bfcAnim.toggle.bind(bfcAnim);
-    bfcAnim.toggle = function() {
-        origBfcToggle();
-        document.getElementById('bfc-play-btn').textContent = bfcAnim.isRunning ? '⏸ 暂停' : '▶ 播放';
-    };
-    bfcAnim.reset = function() {
-        bfcAnim.stop();
-        bfcReset();
-    };
-
-    window.bfcAnim = bfcAnim;
-
-    // ============================================
-    // SVG Packet Animation Helper
-    // ============================================
-    function animateSVGPacket(groupId, x1, y1, x2, y2, color, label) {
-        const group = document.getElementById(groupId);
-        if (!group) return;
-
-        const ns = 'http://www.w3.org/2000/svg';
-
-        // Circle
-        const circle = document.createElementNS(ns, 'circle');
-        circle.setAttribute('cx', x1);
-        circle.setAttribute('cy', y1);
-        circle.setAttribute('r', 6);
-        circle.setAttribute('fill', color);
-        circle.style.filter = `drop-shadow(0 0 4px ${color})`;
-
-        // Label
-        const text = document.createElementNS(ns, 'text');
-        text.setAttribute('x', x1);
-        text.setAttribute('y', y1 - 10);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('fill', color);
-        text.setAttribute('font-size', '9');
-        text.setAttribute('font-family', 'monospace');
-        text.setAttribute('font-weight', '700');
-        text.textContent = label;
-
-        group.appendChild(circle);
-        group.appendChild(text);
-
-        // Animate
-        const duration = 600;
-        const start = performance.now();
-
-        function animate(now) {
-            const elapsed = now - start;
-            const progress = Math.min(elapsed / duration, 1);
-            const eased = 1 - Math.pow(1 - progress, 3);
-
-            const cx = x1 + (x2 - x1) * eased;
-            const cy = y1 + (y2 - y1) * eased;
-
-            circle.setAttribute('cx', cx);
-            circle.setAttribute('cy', cy);
-            text.setAttribute('x', cx);
-            text.setAttribute('y', cy - 10);
-
-            if (progress < 1) {
-                requestAnimationFrame(animate);
-            } else {
-                // Fade out
-                circle.style.transition = 'opacity 0.3s';
-                text.style.transition = 'opacity 0.3s';
-                circle.style.opacity = '0';
-                text.style.opacity = '0';
-                setTimeout(() => {
-                    if (circle.parentNode) circle.parentNode.removeChild(circle);
-                    if (text.parentNode) text.parentNode.removeChild(text);
-                }, 300);
+                if (mode === 'mechanism') {
+                    document.getElementById('mechanism-view').classList.add('active');
+                    document.getElementById('view-mechanism').classList.add('active');
+                } else if (mode === 'sequence') {
+                    document.getElementById('sequence-view').classList.add('active');
+                    document.getElementById('view-sequence').classList.add('active');
+                } else if (mode === 'comparison') {
+                    document.getElementById('comparison-view').classList.add('active');
+                    document.getElementById('view-comparison').classList.add('active');
+                }
             }
-        }
 
-        requestAnimationFrame(animate);
-    }
+            // ==================== 动画控制器 ====================
+            function initAnimationController() {
+                animController = new AnimationController({
+                    stepFn: () => {
+                        currentStep++;
+                        if (currentStep >= COMPARISON_STEPS.length) {
+                            return false;
+                        }
+                        updateDisplay();
+                        return true;
+                    },
+                    interval: 2000,
+                    onReset: () => {
+                        currentStep = -1;
+                        updateDisplay();
+                    },
+                    onComplete: () => {
+                        document.getElementById('fc-current-step-num').innerHTML +=
+                            '<br><span class="text-green">✓ 完成</span>';
+                    }
+                });
+            }
 
-    function clearSVGPackets(groupId) {
-        const group = document.getElementById(groupId);
-        if (group) group.innerHTML = '';
-    }
+            // ==================== 更新显示 ====================
+            function updateDisplay() {
+                document.getElementById('fc-current-step-num').textContent = 
+                    currentStep >= 0 ? currentStep + 1 : '0';
 
-    // ============================================
-    // Initialize
-    // ============================================
-    cbfcUpdateUI();
-    bfcUpdateUI();
+                if (currentStep >= 0 && currentStep < COMPARISON_STEPS.length) {
+                    const step = COMPARISON_STEPS[currentStep];
+                    
+                    // 更新缓冲可视化
+                    document.getElementById('pfc-buffer-fill').style.width = step.metrics.pfcBuf + '%';
+                    document.getElementById('pfc-used').textContent = step.metrics.pfcBuf;
+                    
+                    document.getElementById('cbfc-credit-fill').style.width = step.metrics.cbfcCredit + '%';
+                    document.getElementById('cbfc-credit').textContent = (step.metrics.cbfcCredit * 10) + '/1000';
 
-})();
-</script>
+                    document.getElementById('fc-pfc-buffer-pct').textContent = step.metrics.pfcBuf + '%';
+                    document.getElementById('fc-cbfc-credit-pct').textContent = step.metrics.cbfcCredit + '%';
+                }
+            }
 
+            // ==================== 初始化视图切换 ====================
+            function initViewToggle() {
+                // 设置初始活跃视图
+                document.getElementById('mechanism-view').classList.add('active');
+                document.getElementById('view-mechanism').classList.add('active');
+            }
+
+            // ==================== 初始化 ====================
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
 </body>
 </html>
